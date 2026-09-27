@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
+  <title>Cloudlog Desktop</title>
+  <link id="theme-css" rel="stylesheet" href="vendor/cerulean.css">
+  <link rel="stylesheet" href="vendor/fa/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="navbar navbar-expand navbar-dark bg-primary px-3" id="topnav">
+    <a class="navbar-brand fw-bold" href="#/dashboard"><i class="fas fa-cloud me-2"></i>Cloudlog</a>
+    <ul class="navbar-nav me-auto" id="mainnav">
+      <li class="nav-item"><a class="nav-link" data-route="dashboard" href="#/dashboard">Dashboard</a></li>
+      <li class="nav-item"><a class="nav-link" data-route="live" href="#/live">Live QSO</a></li>
+      <li class="nav-item"><a class="nav-link" data-route="quick" href="#/quick">Quick Log</a></li>
+      <li class="nav-item"><a class="nav-link" data-route="contest" href="#/contest">Contest</a></li>
+      <li class="nav-item"><a class="nav-link" data-route="logbook" href="#/logbook">Logbook</a></li>
+      <li class="nav-item"><a class="nav-link" data-route="settings" href="#/settings">Settings</a></li>
+    </ul>
+    <div class="d-flex align-items-center gap-2 text-white small">
+      <span id="chip-logbook" class="chip" role="button" tabindex="0" title="Current logbook (click to change)"></span>
+      <span id="chip-rig" class="chip" role="button" tabindex="0" title="Radio CAT status"></span>
+      <span id="chip-sync" class="chip" role="button" tabindex="0" title="Upload status"></span>
+      <span id="clock" class="font-monospace ms-1" title="UTC"></span>
+    </div>
+  </nav>
+  <main id="page" class="container-fluid py-3 px-4"></main>
+  <div id="toasts" class="toast-stack"></div>
+  <script src="vendor/bootstrap.bundle.min.js"></script>
+  <script src="util.js"></script>
+  <script src="pages/dashboard.js"></script>
+  <script src="pages/live.js"></script>
+  <script src="pages/quick.js"></script>
+  <script src="pages/contest.js"></script>
+  <script src="pages/logbook.js"></script>
+  <script src="pages/settings.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

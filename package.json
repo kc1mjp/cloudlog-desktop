@@ -1,0 +1,86 @@
+{
+  "name": "cloudlog-desktop",
+  "version": "0.3.2",
+  "description": "Desktop logging client for Cloudlog with offline logging, contest/quick logging, Hamlib CAT and an ADIF socket",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/copy-vendor.js",
+    "test": "node --test test/core.test.js test/rig-adif.test.js",
+    "dist": "electron-builder --linux AppImage deb",
+    "dist:appimage": "electron-builder --linux AppImage",
+    "dist:deb": "electron-builder --linux deb"
+  },
+  "keywords": [],
+  "author": {
+    "name": "Cloudlog Desktop",
+    "email": "noreply@example.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "bootstrap": "^5.3.8",
+    "bootswatch": "^5.3.8",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "productName": "Cloudlog Desktop",
+  "homepage": "https://github.com/magicbug/Cloudlog",
+  "build": {
+    "appId": "org.cloudlog.desktop",
+    "productName": "Cloudlog Desktop",
+    "copyright": "MIT",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network;HamRadio",
+      "icon": "build/icon.png",
+      "maintainer": "Cloudlog Desktop <noreply@example.com>",
+      "synopsis": "Cloudlog desktop logging client",
+      "artifactName": "${name}_${version}_${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Comment": "Amateur radio logging for Cloudlog",
+          "Keywords": "ham;amateur;radio;log;cloudlog;hamlib;adif;"
+        }
+      },
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0 | libgtk-3-0t64",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0 | libatspi2.0-0t64",
+        "libuuid1",
+        "libsecret-1-0",
+        "libhamlib-utils"
+      ]
+    },
+    "appImage": {
+      "artifactName": "${name}_${version}_${arch}.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "build/force_rts.so",
+        "to": "force_rts.so"
+      }
+    ]
+  },
+  "desktopName": "cloudlog-desktop.desktop"
+}

@@ -1,0 +1,6 @@
+.*
+*.swp
+!.gitignore
+dist/*
+node_modules/*
+src/renderer/vendor/*

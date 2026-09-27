@@ -17,10 +17,6 @@ An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/C
 
 ## Install
 
-    sudo apt install ./cloudlog-desktop_0.1.0_amd64.deb      # pulls in libhamlib-utils
-
-or
-
     sudo apt install libhamlib-utils
     chmod +x cloudlog-desktop_0.1.0_x86_64.AppImage && ./cloudlog-desktop_0.1.0_x86_64.AppImage
 
@@ -50,7 +46,7 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 
 ## Changelog
 
-### 0.1.0 (this build)
+### 0.1.0
 - System tray icon (same cloud icon as the window) with Show / Sync now / Quit. Closing the window now minimizes to the tray instead of quitting; the CAT connection and ADIF listener keep running in the background.
 - Multiple radios: Settings > Radio now manages any number of radios, each with its own connection and shared Hamlib port. One is "active for logging" at a time and drives the Live/Quick/Contest "follow radio" feature; every radio with "send to Cloudlog" on reports its own frequency independently. Existing single-radio configs migrate automatically.
 - Fixed the `get_contacts_adif` error: confirmed against Cloudlog's own source that stock Cloudlog (unlike Wavelog) doesn't expose a logbook-download endpoint at all. The Logbook page now explains this plainly and disables "Update from server" instead of showing a raw error - QSOs you log still upload normally.

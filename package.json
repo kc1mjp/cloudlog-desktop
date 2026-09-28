@@ -1,22 +1,27 @@
 {
   "name": "cloudlog-desktop",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Desktop logging client for Cloudlog with offline logging, contest/quick logging, Hamlib CAT and an ADIF socket",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/copy-vendor.js",
-    "test": "node --test test/core.test.js test/rig-adif.test.js",
-    "dist": "electron-builder --linux AppImage deb",
-    "dist:appimage": "electron-builder --linux AppImage",
-    "dist:deb": "electron-builder --linux deb"
+    "rebuild:electron": "electron-builder install-app-deps",
+    "test": "node --test test/core.test.js test/rig-adif.test.js test/local-edit.test.js test/qso-cache.test.js",
+    "dev:reset-cache": "node scripts/reset-qso-cache.js",
+    "dist": "electron-builder install-app-deps && electron-builder --linux AppImage deb",
+    "dist:appimage": "electron-builder install-app-deps && electron-builder --linux AppImage",
+    "dist:deb": "electron-builder install-app-deps && electron-builder --linux deb"
   },
   "keywords": [],
   "author": {
     "name": "Cloudlog Desktop",
     "email": "noreply@example.com"
   },
-  "license": "MIT",
+  "license": "GPLv3",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
     "bootstrap": "^5.3.8",
@@ -25,11 +30,11 @@
     "electron-builder": "^26.15.3"
   },
   "productName": "Cloudlog Desktop",
-  "homepage": "https://github.com/magicbug/Cloudlog",
+  "homepage": "https://github.com/kc1mjp/cloudlog-desktop",
   "build": {
     "appId": "org.cloudlog.desktop",
     "productName": "Cloudlog Desktop",
-    "copyright": "MIT",
+    "copyright": "GPLv3",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -40,6 +45,10 @@
       "!**/*.map"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "npmRebuild": true,
     "linux": {
       "target": [
         "AppImage",

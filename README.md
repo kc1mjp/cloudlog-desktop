@@ -33,18 +33,25 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 
 ## Layout
 
-    src/main/      Electron main process: cloudlog.js (API), logbook.js (queue/sync/cache), rig.js (Hamlib + relay),
-                   adifserver.js, adif.js, contests.js, store.js
+    src/main/      Electron main process: cloudlog.js (API), logbook.js (queue/sync, backed by qso-cache.js),
+                   qso-cache.js (SQLite QSO cache repository - the only module that touches the database),
+                   rig.js (Hamlib + relay), adifserver.js, adif.js, contests.js, store.js (settings.json)
     src/renderer/  UI (plain HTML/JS, Bootstrap theme): util.js, app.js, pages/*
     test/          node:test suites (mock Cloudlog server, real rigctld) and a headless UI smoke test
 
 ## Notes and limits
 
 - API endpoints used: `api/auth`, `api/station_info`, `api/qso`, `api/radio`, `api/get_contacts_adif`. Logbook download needs a server version that has the last one.
-- Data lives in `~/.config/cloudlog-desktop` (settings, local QSO queue, downloaded logbooks). The API key is stored there in plain text.
+- Data lives in `~/.config/cloudlog-desktop`: `settings.json` (settings, API key - stored there in plain text) and `qsocache.sqlite3` (the local QSO cache - your queued/local QSOs and each logbook's downloaded copy, scoped per logbook so switching or clearing one never touches another). Deleting the sqlite file (with the app closed) is equivalent to a full reset of every logbook's local cache; a developer-only `npm run dev:reset-cache` script does the same with a confirmation prompt.
+- Settings > Logbooks has a "Clear local cache" button per logbook: it clears that logbook's already-synced/downloaded QSOs (forcing a fresh download next time) without touching any other logbook or any QSO still waiting to upload.
 - Opening the ADIF socket or the Hamlib port to "all interfaces" exposes them to your network; the default is this computer only.
 
 ## Changelog
+
+### 0.3.3
+- The local QSO cache (queued/pending uploads, and each logbook's downloaded copy) now lives in a SQLite database (`qsocache.sqlite3`) instead of `qsos.json`/per-logbook JSON files. Built for logbooks well beyond 100,000 QSOs: indexed keyset pagination (no more full-logbook loads to render the Logbook page), indexed callsign history/dupe checks (Contest and Quick pages), and indexed pending/failed/synced lookups. All database access stays in the Electron main process, behind a dedicated cache module - the renderer only ever calls narrow, validated IPC methods.
+- Settings > Logbooks: a "Clear local cache" button per logbook. It only clears that logbook's already-synced/downloaded QSOs (so the next view/refresh re-downloads them) - it never touches another logbook, your settings, or a QSO still waiting to upload.
+- The old `qsos.json`/`remote-*.json` files, if present from a previous version, are left on disk untouched and unused; this release does not migrate or read them.
 
 ### 0.1.0
 - System tray icon (same cloud icon as the window) with Show / Sync now / Quit. Closing the window now minimizes to the tray instead of quitting; the CAT connection and ADIF listener keep running in the background.

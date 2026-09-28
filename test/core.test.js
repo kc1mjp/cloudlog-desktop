@@ -62,10 +62,12 @@ test('offline logging queues, then uploads when the server appears', async () =>
   assert.strictEqual(m2.state.qsos[0].f.CALL, 'K1ABC');
 
   // duplicate on server counts as synced, not failed
-  log.local.data.qsos[0].state = 'pending';
+  const firstId = log.localList(['synced'])[0].id;
+  log.cache.setState(firstId, { state: 'pending', error: '', updatedAt: Date.now() });
   await log.sync();
-  assert.strictEqual(log.local.data.qsos[0].state, 'synced');
-  assert.strictEqual(log.local.data.qsos[0].error, 'Already on server');
+  const first = log.cache.get(firstId);
+  assert.strictEqual(first.sync_state, 'synced');
+  assert.strictEqual(first.error, 'Already on server');
 
   // bad key: stays pending, reports the problem
   settings.cloudlog.apiKey = 'wrong';

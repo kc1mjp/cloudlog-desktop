@@ -32,7 +32,7 @@ test('editing an unknown or already-synced QSO is rejected', () => {
   const log = new LogService({ dir: tmp(), client: offlineClient, getSettings: () => clone(SETTINGS_DEFAULTS) });
   assert.throws(() => log.updateLocal('nope', { call: 'K1ABC' }), /no longer/);
   const rec = log.addQso({ call: 'K1ABC', freq: '14.2', mode: 'SSB' });
-  log.local.data.qsos.find((r) => r.id === rec.id).state = 'synced';
+  log.cache.setState(rec.id, { state: 'synced', error: '', syncedAt: Date.now(), updatedAt: Date.now() });
   assert.throws(() => log.updateLocal(rec.id, { call: 'K1XYZ' }), /already uploaded/i);
 });
 

@@ -180,6 +180,12 @@ const api = {
   'qso:workedBefore': (call) => log.workedBefore(call, currentStation()),
   'log:query': (params) => log.query({ ...params, stationId: params.stationId || currentStation() }),
   'log:stats': () => log.stats(currentStation()),
+  'log:clearCache': (stationId) => {
+    const id = String(stationId || '').trim();
+    if (!id) throw new Error('Choose a logbook first');
+    log.clearLogbookCache(id);
+    return { ok: true };
+  },
   'log:refresh': async (stationId, opts) => {
     try {
       return await log.refreshRemote(stationId || currentStation(), opts);
@@ -249,11 +255,13 @@ const api = {
     const c = contestById(contestId);
     const id = c.custom ? (settings.data.contest.customId || 'OTHER') : c.id;
     const m = dupeMatcher(id, call.toUpperCase(), band, mode, c.dupe);
-    const hit = log.records(currentStation(), (r) => m(r) && `${r.QSO_DATE}${r.TIME_ON}` >= since)[0];
+    // Scoped to this callsign (indexed) and to the contest window, rather than scanning the whole logbook.
+    const hit = log.callsignHistory(currentStation(), call, LogService.stampToMs(since)).find(m);
     return hit ? { date: hit.QSO_DATE, time: hit.TIME_ON, band: hit.BAND, mode: hit.MODE } : null;
   },
   'contest:summary': ({ adifId, since }) => {
-    const rows = log.records(currentStation(), (r) => r.CONTEST_ID === adifId && `${r.QSO_DATE}${r.TIME_ON}` >= since);
+    // Scoped to the contest's time window (indexed range scan), not the whole logbook.
+    const rows = log.recordsSince(currentStation(), LogService.stampToMs(since)).filter((r) => r.CONTEST_ID === adifId);
     const byBand = {};
     for (const r of rows) byBand[r.BAND] = (byBand[r.BAND] || 0) + 1;
     const hourAgo = new Date(Date.now() - 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);

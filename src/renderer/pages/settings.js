@@ -88,9 +88,10 @@
       <div class="col-md-6 col-xl-4"><div class="card h-100 ${b.id === String(c.currentStationId) ? 'border-success' : ''}">
         <div class="card-header d-flex justify-content-between"><span class="fw-bold">${b.name}</span>${raw(b.id === String(c.currentStationId) ? '<span class="badge text-bg-success">Current</span>' : '')}</div>
         <div class="card-body"><div class="fs-4 mono">${b.callsign}</div><div class="text-muted">Grid ${b.grid || '—'} · ID ${b.id}${b.active ? '' : ' · inactive'}</div></div>
-        <div class="card-footer d-flex gap-2">
+        <div class="card-footer d-flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-success" data-cur="${b.id}" ${b.id === String(c.currentStationId) ? 'disabled' : ''}>Use for new QSOs</button>
-          <a class="btn btn-sm btn-outline-primary" href="#/logbook?id=${b.id}">View QSOs</a></div></div></div>`).join(''))}</div>`
+          <a class="btn btn-sm btn-outline-primary" href="#/logbook?id=${b.id}">View QSOs</a>
+          <button class="btn btn-sm btn-outline-danger ms-auto" data-clearcache="${b.id}" title="Clear the local offline copy - does not touch the server"><i class="fas fa-broom me-1"></i>Clear local cache</button></div></div></div>`).join(''))}</div>`
       : html`<div class="card"><div class="card-body text-center text-muted py-5">
           <p class="mb-2">${s.configured ? 'No logbooks loaded yet.' : 'Connect to Cloudlog on the Cloudlog tab to load your logbooks.'}</p>
           <p class="small">If you are offline you can type a station ID on the Cloudlog tab.</p></div></div>`)}`;
@@ -98,6 +99,17 @@
       try { const l = await api('stations:refresh'); toast(`${l.length} logbook${l.length === 1 ? '' : 's'} found`); } catch (e) { toast(e.message, 'danger'); }
     });
     el.querySelectorAll('[data-cur]').forEach((b) => b.addEventListener('click', async () => { await api('stations:setCurrent', b.dataset.cur); toast('Current logbook changed'); }));
+    el.querySelectorAll('[data-clearcache]').forEach((b) => b.addEventListener('click', async () => {
+      const st = c.stations.find((x) => x.id === b.dataset.clearcache);
+      const label = st ? `${st.name} (${st.callsign})` : `logbook #${b.dataset.clearcache}`;
+      const ok = await confirmDialog({
+        title: 'Clear local cache?',
+        body: `This clears the local offline copy of ${label} only - the QSOs already downloaded or uploaded for it. It will re-download from the server the next time this logbook is viewed or refreshed. This does not touch the server, any other logbook, or any QSO of yours that is still queued to upload.`,
+        confirmLabel: 'Clear cache',
+      });
+      if (!ok) return;
+      try { await api('log:clearCache', b.dataset.clearcache); toast('Local cache cleared for that logbook'); } catch (e) { toast(e.message, 'danger'); }
+    }));
   }
 
   // ---- Radio ------------------------------------------------------------------------

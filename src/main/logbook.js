@@ -2,7 +2,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const EventEmitter = require('events');
-const { JsonStore } = require('./store');
+const { QsoCache, UNASSIGNED, qsoTimeMs } = require('./qso-cache');
 const { parseAdif, generateAdif } = require('./adif');
 const { freqToBand, nowUtc } = require('./bands');
 
@@ -12,17 +12,14 @@ const KEEP = ['CALL', 'QSO_DATE', 'TIME_ON', 'BAND', 'MODE', 'SUBMODE', 'FREQ', 
   'STX_STRING', 'SRX_STRING', 'STATION_CALLSIGN'];
 
 const slim = (r) => { const o = {}; for (const k of KEEP) if (r[k]) o[k] = r[k]; return o; };
-const sortKey = (f) => `${f.QSO_DATE || ''}${f.TIME_ON || ''}`;
-const dupeKey = (f) => [f.CALL, f.QSO_DATE, (f.TIME_ON || '').slice(0, 4), f.BAND, f.MODE].join('|');
 
 class LogService extends EventEmitter {
-  constructor({ dir, client, getSettings }) {
+  constructor({ dir, client, getSettings, dbFile }) {
     super();
     this.dir = dir;
     this.client = client;
     this.getSettings = getSettings;
-    this.local = new JsonStore(path.join(dir, 'qsos.json'), { qsos: [] });
-    this.remote = new Map();
+    this.cache = new QsoCache(dbFile || path.join(dir, 'qsocache.sqlite3'));
     this.online = null;
     this.syncing = false;
     this.lastError = '';
@@ -33,7 +30,13 @@ class LogService extends EventEmitter {
     // clock stays at 0 so we still confirm connectivity shortly after start.
     this._lastTick = Date.now();
     this._lastPing = 0;
-    for (const r of this.local.data.qsos) if (r.state === 'syncing') r.state = 'pending';
+    // Keyset-pagination cursor stacks, keyed by station+filters+pageSize. Cleared
+    // whenever the underlying data changes so a stale cursor never serves stale
+    // paging - the UI simply falls back to page 1 in that (rare) case.
+    this._cursorState = new Map();
+    // Any row left mid-upload from a previous run (crash, force-quit) goes back
+    // to pending rather than being silently stuck as "syncing" forever.
+    for (const row of this.cache.listLocal(['syncing'])) this.cache.setState(row.id, { state: 'pending', error: '', updatedAt: Date.now() });
   }
 
   start() {
@@ -43,8 +46,7 @@ class LogService extends EventEmitter {
 
   stop() {
     clearInterval(this._timer);
-    this.local.saveNow();
-    for (const s of this.remote.values()) s.saveNow();
+    this.cache.close();
   }
 
   // ---- adding ---------------------------------------------------------
@@ -78,70 +80,73 @@ class LogService extends EventEmitter {
 
   addQso(input, { source = 'manual', stationId = null, dedupe = false } = {}) {
     const fields = this.normalize(input);
-    if (dedupe) {
-      const k = dupeKey(fields);
-      if (this.local.data.qsos.some((r) => dupeKey(r.fields) === k)) return null;
-    }
-    const rec = {
-      id: crypto.randomUUID(), fields, stationId: stationId || null, state: 'pending',
-      error: '', source, created: Date.now(),
-    };
-    this.local.data.qsos.push(rec);
-    this.local.saveNow();
+    const logbookId = String(stationId || this.getSettings().cloudlog.currentStationId || UNASSIGNED);
+    if (dedupe && this.cache.findDedupeMatch(logbookId, fields)) return null;
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    this.cache.insertLocal({
+      id, logbookId, stationId: logbookId === UNASSIGNED ? null : logbookId, fields,
+      state: 'pending', source, error: '', createdAt: now,
+    });
+    this._cursorState.clear();
     this.emit('changed');
     if (this.getSettings().sync.instant !== false) setImmediate(() => this.sync());
-    return rec;
+    return { id, fields, stationId: logbookId === UNASSIGNED ? null : logbookId, state: 'pending', error: '', source, created: now };
   }
 
   // ---- local queue ----------------------------------------------------
 
   localList(states) {
-    return this.local.data.qsos.filter((r) => !states || states.includes(r.state)).slice().reverse();
+    return this.cache.listLocal(states).map((row) => ({
+      id: row.id, fields: JSON.parse(row.fields_json), stationId: row.station_id, state: row.sync_state,
+      error: row.error || '', source: row.source, created: row.created_at,
+    }));
   }
 
   deleteLocal(id) {
-    const i = this.local.data.qsos.findIndex((r) => r.id === id);
-    if (i >= 0) { this.local.data.qsos.splice(i, 1); this.local.saveNow(); this.emit('changed'); this.emit('status'); }
+    if (!this.cache.get(id)) return;
+    this.cache.delete(id);
+    this._cursorState.clear();
+    this.emit('changed');
+    this.emit('status');
   }
 
   /** Edit a QSO that hasn't uploaded yet (pending or failed). Puts it back in the queue. */
   updateLocal(id, patch) {
-    const rec = this.local.data.qsos.find((r) => r.id === id);
-    if (!rec) throw new Error('That QSO is no longer in the queue');
-    if (rec.state === 'synced') throw new Error('Already uploaded - it can only be edited on the server');
-    rec.fields = this.normalize({ ...rec.fields, ...patch });
-    rec.state = 'pending';
-    rec.error = '';
-    this.local.saveNow();
+    const row = this.cache.get(id);
+    if (!row) throw new Error('That QSO is no longer in the queue');
+    if (row.sync_state === 'synced') throw new Error('Already uploaded - it can only be edited on the server');
+    const fields = this.normalize({ ...JSON.parse(row.fields_json), ...patch });
+    this.cache.updateFieldsAndState(id, { fields, state: 'pending', error: '', updatedAt: Date.now() });
+    this._cursorState.clear();
     this.emit('changed');
     if (this.getSettings().sync.instant !== false) setImmediate(() => this.sync());
-    return rec;
+    return { id, fields, state: 'pending', error: '' };
   }
 
   retryFailed() {
-    for (const r of this.local.data.qsos) if (r.state === 'failed') { r.state = 'pending'; r.error = ''; }
-    this.local.saveNow();
+    this.cache.retryFailedToPending();
     this.emit('changed');
     return this.sync();
   }
 
   exportLocalAdif() {
     const head = generateAdif({}, { header: true }).replace(/<EOR>\n$/, '');
-    return head + this.local.data.qsos.map((r) => generateAdif(r.fields)).join('');
+    return head + this.cache.listLocalAll().map((row) => generateAdif(JSON.parse(row.fields_json))).join('');
   }
 
   // ---- upload ---------------------------------------------------------
 
   status() {
-    const q = this.local.data.qsos;
     const cfg = this.getSettings();
+    const counts = this.cache.localStateCounts();
     return {
       configured: this.client.configured(),
       online: this.online,
       syncing: this.syncing,
       paused: !!cfg.sync.paused,
-      pending: q.filter((r) => r.state === 'pending').length,
-      failed: q.filter((r) => r.state === 'failed').length,
+      pending: counts.pending,
+      failed: counts.failed,
       lastSync: this.lastSync,
       lastError: this.lastError,
     };
@@ -154,7 +159,7 @@ class LogService extends EventEmitter {
       if (this.online !== null && cfg.sync.paused) { this.online = null; this.emit('status'); }
       return;
     }
-    const pending = this.local.data.qsos.some((r) => r.state === 'pending');
+    const pending = this.cache.hasPendingAny();
     if (pending && cfg.sync.auto && now - this._lastTick >= (cfg.sync.intervalSec || 20) * 1000) {
       this._lastTick = now;
       await this.sync();
@@ -183,12 +188,14 @@ class LogService extends EventEmitter {
     this.syncing = true;
     this.emit('status');
     try {
-      for (const rec of this.local.data.qsos.filter((r) => r.state === 'pending')) {
-        const sid = rec.stationId || this.getSettings().cloudlog.currentStationId;
+      for (const row of this.cache.listPending()) {
+        const cur = this.getSettings().cloudlog.currentStationId;
+        const sid = (row.logbook_id !== UNASSIGNED ? row.logbook_id : null) || (cur ? String(cur) : null);
         if (!sid) { this.lastError = 'Choose a logbook before uploading'; break; }
+        if (sid !== row.logbook_id) this.cache.reassignLogbook(row.id, sid);
         let res;
         try {
-          res = await this.client.postQso(generateAdif(rec.fields), sid);
+          res = await this.client.postQso(generateAdif(JSON.parse(row.fields_json)), sid);
         } catch (e) {
           this.lastError = e.message;
           this.online = e.retry ? false : true;
@@ -196,20 +203,16 @@ class LogService extends EventEmitter {
         }
         this.online = true;
         this.lastError = '';
-        rec.stationId = sid;
+        const now = Date.now();
         if (res.ok || res.duplicate) {
-          rec.state = 'synced';
-          rec.error = res.duplicate ? 'Already on server' : '';
-          rec.syncedAt = Date.now();
-          this.lastSync = Date.now();
+          this.cache.setState(row.id, { state: 'synced', error: res.duplicate ? 'Already on server' : '', syncedAt: now, updatedAt: now });
+          this.lastSync = now;
         } else {
-          rec.state = 'failed';
-          rec.error = res.message;
+          this.cache.setState(row.id, { state: 'failed', error: res.message, updatedAt: now });
         }
-        this.local.saveNow();
+        this._cursorState.clear();
         this.emit('changed');
       }
-      this._prune();
     } finally {
       this.syncing = false;
       this.emit('status');
@@ -217,92 +220,84 @@ class LogService extends EventEmitter {
     return this.status();
   }
 
-  _prune() {
-    const synced = this.local.data.qsos.filter((r) => r.state === 'synced');
-    if (synced.length > 1000) {
-      const drop = new Set(synced.slice(0, synced.length - 1000).map((r) => r.id));
-      this.local.data.qsos = this.local.data.qsos.filter((r) => !drop.has(r.id));
-      this.local.saveNow();
-    }
-  }
-
   // ---- server logbook cache ---------------------------------------------
 
-  _remote(stationId) {
-    const id = String(stationId);
-    if (!this.remote.has(id)) {
-      this.remote.set(id, new JsonStore(path.join(this.dir, `remote-${id.replace(/\W/g, '_')}.json`), { lastId: 0, fetchedAt: null, qsos: [] }));
-    }
-    return this.remote.get(id);
-  }
-
   async refreshRemote(stationId, { full = false } = {}) {
-    const store = this._remote(stationId);
-    if (full) { store.data.lastId = 0; store.data.qsos = []; }
-    let from = store.data.lastId || 0;
+    const logbookId = String(stationId);
+    if (full) this.cache.clearLogbook(logbookId);
+    let from = full ? 0 : (this.cache.getSyncMeta(logbookId).lastFetchId || 0);
     let added = 0;
     for (let i = 0; i < 200; i++) {
       const j = await this.client.getContactsAdif(stationId, from);
       const n = Number(j.exported_qsos || 0);
       if (!n || !j.adif) break;
       const { records } = parseAdif(Buffer.from(j.adif, 'utf8').toString('latin1'));
-      for (const r of records) store.data.qsos.push(slim(r));
-      added += records.length;
+      added += this.cache.upsertRemoteBatch(logbookId, records.map(slim));
       const last = Number(j.lastfetchedid);
       if (!(last > from)) break;
       from = last;
-      store.data.lastId = last;
+      this.cache.setSyncCursor(logbookId, last);
       this.emit('progress', { stationId, added });
     }
-    store.data.fetchedAt = Date.now();
-    store._sorted = null;
-    store.saveNow();
+    this.cache.setSyncFetchedAt(logbookId, Date.now());
+    this._cursorState.clear();
     this.online = true;
     this.emit('changed');
-    return { added, total: store.data.qsos.length };
+    return { added, total: this.cache.countByLogbook(logbookId) };
   }
 
-  _all(stationId) {
-    const store = this._remote(stationId);
-    if (!store._sorted) store._sorted = store.data.qsos.slice().sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
-    const cur = this.getSettings().cloudlog.currentStationId;
-    const seen = new Set(store._sorted.map(dupeKey));
-    const extra = [];
-    for (const r of this.local.data.qsos) {
-      if (String(r.stationId || cur) !== String(stationId)) continue;
-      if (r.state === 'synced' && seen.has(dupeKey(r.fields))) continue;
-      extra.push({ ...r.fields, _state: r.state, _id: r.id, _error: r.error });
-    }
-    if (!extra.length) return store._sorted;
-    return extra.concat(store._sorted).sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
+  /**
+   * Clear the local cache for one logbook only: rows already confirmed synced with the
+   * server, plus its sync cursor. Pending/failed (not-yet-uploaded) QSOs are preserved.
+   * Marks the logbook for a fresh download next time it's viewed/refreshed.
+   */
+  clearLogbookCache(stationId) {
+    if (!stationId) throw new Error('Choose a logbook first');
+    this.cache.clearLogbook(String(stationId));
+    this._cursorState.clear();
+    this.emit('changed');
   }
 
   query({ stationId, q = '', band = '', mode = '', page = 1, pageSize = 50 }) {
     if (!stationId) return { rows: [], total: 0, page: 1, pageSize, fetchedAt: null, cached: 0 };
-    const store = this._remote(stationId);
-    let rows = this._all(stationId);
+    const logbookId = String(stationId);
     const needle = q.trim().toUpperCase();
-    if (needle || band || mode) {
-      rows = rows.filter((r) => {
-        if (band && r.BAND !== band) return false;
-        if (mode && r.MODE !== mode) return false;
-        if (!needle) return true;
-        return ['CALL', 'NAME', 'QTH', 'GRIDSQUARE', 'COMMENT', 'SOTA_REF', 'POTA_REF', 'SIG_INFO', 'CONTEST_ID']
-          .some((k) => r[k] && r[k].toUpperCase().includes(needle));
-      });
-    }
-    const start = (page - 1) * pageSize;
-    return { rows: rows.slice(start, start + pageSize), total: rows.length, page, pageSize, fetchedAt: store.data.fetchedAt, cached: store.data.qsos.length };
+    const key = JSON.stringify([logbookId, needle, band, mode, pageSize]);
+    let st = this._cursorState.get(key);
+    if (!st) { st = { cursors: [null] }; this._cursorState.set(key, st); }
+    const p = Math.max(1, Math.min(page, st.cursors.length));
+    const cursor = st.cursors[p - 1];
+    const { rows, nextCursor } = this.cache.pageQuery({ logbookId, band, mode, needle, pageSize, cursor });
+    if (p === st.cursors.length && nextCursor) st.cursors.push(nextCursor);
+    const total = this.cache.countQuery({ logbookId, band, mode, needle });
+    const meta = this.cache.getSyncMeta(logbookId);
+    return { rows, total, page: p, pageSize, fetchedAt: meta.fetchedAt, cached: this.cache.countRemoteByLogbook(logbookId) };
   }
 
-  /** All known QSOs for a logbook matching a predicate (used for dupe checks). */
+  /** Callsign history within one logbook, newest first. Uses the (logbook_id, callsign, time) index. */
+  callsignHistory(stationId, call, sinceMs = 0) {
+    if (!stationId) return [];
+    return this.cache.callsignHistory(String(stationId), (call || '').toUpperCase(), sinceMs);
+  }
+
+  /** QSOs within one logbook at/after sinceMs, newest first. Uses the (logbook_id, time) index. */
+  recordsSince(stationId, sinceMs = 0) {
+    if (!stationId) return [];
+    return this.cache.recordsSince(String(stationId), sinceMs);
+  }
+
+  /** All known QSOs for a logbook matching a predicate (generic fallback; prefer callsignHistory/recordsSince). */
   records(stationId, pred) {
-    return stationId ? this._all(stationId).filter(pred) : [];
+    return this.recordsSince(stationId, 0).filter(pred);
+  }
+
+  /** Parse the app's "YYYYMMDDHHMMSS" contest-since stamp into a UTC ms timestamp. */
+  static stampToMs(stamp) {
+    return qsoTimeMs({ QSO_DATE: (stamp || '').slice(0, 8), TIME_ON: (stamp || '').slice(8, 14) });
   }
 
   workedBefore(call, stationId) {
-    const c = (call || '').toUpperCase();
-    const hits = this.records(stationId, (r) => r.CALL === c);
+    const hits = this.callsignHistory(stationId, call);
     if (!hits.length) return { count: 0 };
     const last = hits[0];
     return {
@@ -314,9 +309,12 @@ class LogService extends EventEmitter {
   }
 
   stats(stationId) {
+    if (!stationId) return { total: 0, today: 0, recent: [] };
+    const logbookId = String(stationId);
     const today = nowUtc().date;
-    const all = stationId ? this._all(stationId) : [];
-    return { total: all.length, today: all.filter((r) => r.QSO_DATE === today).length, recent: all.slice(0, 10) };
+    const startMs = qsoTimeMs({ QSO_DATE: today, TIME_ON: '000000' });
+    const { rows: recent } = this.cache.pageQuery({ logbookId, band: '', mode: '', needle: '', pageSize: 10, cursor: null });
+    return { total: this.cache.countByLogbook(logbookId), today: this.cache.countToday(logbookId, startMs, startMs + 86400000), recent };
   }
 }
 

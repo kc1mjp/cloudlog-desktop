@@ -3,11 +3,17 @@
   const { $, html, raw, api, toast, fmtDate, qsoRows, qsoHead, TimeFields, followRig, freqToBand, defaultRst, ssbSubmode, requireLogbook, fmtFreq } = App.util;
   let el; let time; let followTimer; let wbTimer; let lookup; let leftCallField = false;
   let follow = true;
+  // mount() registers its page-wide Enter handler on #page, which outlives the page; the disposer removes it on unmount.
+  const disposer = PageGuards.createDisposer();
+  const saver = PageGuards.createSingleFlight(); // at most one save in progress; released on success or failure
+  let session = null; // identifies the current mount, so a save that finishes after navigation leaves the new page alone
 
   const opts = (list, sel) => list.map((v) => html`<option ${v === sel ? 'selected' : ''}>${v}</option>`).join('');
 
   function mount(root) {
+    disposer.dispose();
     el = root;
+    session = {};
     const { bands, modes } = App.state.info;
     el.innerHTML = html`
     <div class="row g-3">
@@ -105,7 +111,7 @@
       updateLinks();
       lookup?.flush();
     });
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); save(); } });
+    disposer.listen(el, 'keydown', (e) => { if (PageGuards.isLogEnter(e)) { e.preventDefault(); save(); } });
     $('#save').addEventListener('click', save);
     $('#reset').addEventListener('click', () => clear(true));
     $('#to-radio').addEventListener('click', toRadio);
@@ -136,7 +142,11 @@
       <table class="table table-sm mt-2 mb-0 mono">${raw(r.recent.slice(0, 6).map((x) => html`<tr><td>${fmtDate(x.date)}</td><td>${x.band}</td><td>${x.mode}</td></tr>`).join(''))}</table>`;
   }
 
-  async function save() {
+  // Canonical save path: the Enter key and the Save button both end up here.
+  function save() { return saver.run(doSave); }
+
+  async function doSave() {
+    const mounted = session;
     try {
       requireLogbook();
       const call = $('#f-call').value.trim();
@@ -151,7 +161,7 @@
       if (mode === 'SSB') fields.SUBMODE = ssbSubmode(App.state.rig, mhz);
       const r = await api('qso:add', fields, { source: 'Live QSO' });
       toast(`Logged ${r.call}`);
-      clear(false);
+      if (session === mounted) clear(false);
     } catch (e) { toast(e.message, 'danger'); }
   }
 
@@ -188,7 +198,7 @@
 
   App.pages.live = {
     mount,
-    unmount() { clearInterval(followTimer); clearTimeout(wbTimer); lookup?.reset(); lookup = null; el = null; },
+    unmount() { disposer.dispose(); session = null; clearInterval(followTimer); clearTimeout(wbTimer); lookup?.reset(); lookup = null; el = null; },
     tick() { time?.tick(); },
     onEvent({ type }) { if (el && type === 'qso:changed') refreshRecent(); },
   };

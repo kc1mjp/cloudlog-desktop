@@ -262,5 +262,5 @@ test('packaging config: better-sqlite3 is a production dependency and unpacked f
   assert.ok(!pkg.devDependencies || !pkg.devDependencies['better-sqlite3'], 'must not only be a devDependency');
   assert.ok(pkg.build && Array.isArray(pkg.build.asarUnpack) && pkg.build.asarUnpack.some((p) => /better-sqlite3/.test(p)), 'better-sqlite3 must be unpacked from asar');
   assert.strictEqual(pkg.build.asar, true);
-  assert.strictEqual(pkg.version, '0.3.4');
+  assert.strictEqual(pkg.version, '0.3.5');
 });

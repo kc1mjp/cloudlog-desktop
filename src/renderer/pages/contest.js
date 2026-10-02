@@ -2,6 +2,8 @@
 (() => {
   const { $, html, raw, api, toast, confirmDialog, TimeFields, followRig, freqToBand, defaultRst, ssbSubmode, requireLogbook, fmtDate } = App.util;
   let el; let time; let followTimer; let dupeTimer; let dupe = null; let armed = false; let follow = true;
+  // The keydown handler lives on #page, which outlives this page (and is re-registered by each drawEntry); the disposer removes it.
+  const disposer = PageGuards.createDisposer();
 
   const cfg = () => App.state.settings.contest;
   const def = () => App.state.info.contests.find((c) => c.id === cfg().id) || App.state.info.contests[0];
@@ -10,12 +12,14 @@
   const patch = (p) => api('settings:set', { contest: p });
 
   function mount(root) {
+    disposer.dispose();
     el = root;
     cfg().startedAt ? drawEntry() : drawSetup();
   }
 
   // ---- setup ------------------------------------------------------------------
   function drawSetup() {
+    disposer.dispose(); // no Enter-to-log on the setup screen
     const c = cfg();
     const d = def();
     el.innerHTML = html`
@@ -47,6 +51,7 @@
 
   // ---- entry ------------------------------------------------------------------
   function drawEntry() {
+    disposer.dispose(); // drawEntry can run again within one mount (e.g. after ending and restarting a session)
     const d = def();
     const c = cfg();
     dupe = null; armed = false;
@@ -104,7 +109,7 @@
       clearTimeout(dupeTimer);
       dupeTimer = setTimeout(checkDupe, 120);
     });
-    el.addEventListener('keydown', (e) => {
+    disposer.listen(el, 'keydown', (e) => {
       if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); log(); }
       if (e.key === 'Escape') clearEntry();
     });
@@ -196,7 +201,7 @@
 
   App.pages.contest = {
     mount,
-    unmount() { clearInterval(followTimer); clearTimeout(dupeTimer); el = null; },
+    unmount() { disposer.dispose(); clearInterval(followTimer); clearTimeout(dupeTimer); el = null; },
     tick() { time?.tick(); },
     onEvent({ type }) { if (el && type === 'qso:changed') refreshStats(); },
   };

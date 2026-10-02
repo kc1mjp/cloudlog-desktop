@@ -6,6 +6,10 @@
   let count = 0; // QSOs logged since this window opened
   let follow = true;
   let dupe = null;
+  // mount() registers its page-wide keydown handler on #page, which outlives the page; the disposer removes it on unmount.
+  const disposer = PageGuards.createDisposer();
+  const saver = PageGuards.createSingleFlight(); // at most one save in progress; released on success or failure
+  let session = null; // identifies the current mount, so a save that finishes after navigation leaves the new page alone
 
   /** ADIF fields for a programme reference; `my` selects the MY_ variants. */
   function refFields(type, ref, my) {
@@ -26,7 +30,9 @@
   const typeOpts = (sel) => TYPES.map((t) => html`<option ${t === sel ? 'selected' : ''}>${t}</option>`).join('');
 
   function mount(root) {
+    disposer.dispose();
     el = root;
+    session = {};
     dupe = null;
     const s = q();
     const modes = ['SSB', 'CW', 'FM', 'FT8', 'AM'];
@@ -109,8 +115,8 @@
       clearTimeout(wbTimer);
       wbTimer = setTimeout(checkDupe, 200);
     });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); log(); }
+    disposer.listen(el, 'keydown', (e) => {
+      if (PageGuards.isLogEnter(e)) { e.preventDefault(); log(); }
       if (e.key === 'Escape') clear();
     });
     $('#q-save').addEventListener('click', log);
@@ -130,9 +136,10 @@
     if (!box) return;
     dupe = null;
     if (call.length >= 3) {
+      // Read the form before awaiting: the page may have been left (its fields gone) by the time the lookup returns.
+      const band = $('#q-band').value; const mode = $('#q-mode').value;
       const r = await api('qso:workedBefore', call).catch(() => null);
       const today = App.util.utcNow().date.replace(/-/g, '');
-      const band = $('#q-band').value; const mode = $('#q-mode').value;
       dupe = r && r.count ? r.recent.find((x) => x.date === today && x.band === band && x.mode === mode) : null;
       if (!dupe && r && r.count) {
         box.className = 'alert alert-info py-2 small';
@@ -145,7 +152,11 @@
   }
 
   let armed = false; // second Enter on a dupe logs it
-  async function log() {
+  // Canonical save path: the Enter key and the Log it button both end up here.
+  function log() { return saver.run(doLog); }
+
+  async function doLog() {
+    const mounted = session;
     try {
       requireLogbook();
       const call = $('#q-call').value.trim();
@@ -155,23 +166,26 @@
       const s = q();
       const mhz = parseFloat($('#q-freq').value);
       const mode = $('#q-mode').value;
+      const band = $('#q-band').value; const theirRef = $('#their-ref').value.toUpperCase();
       const t = new Date();
       const p2 = (n) => String(n).padStart(2, '0');
       const tv = time.auto || !time.dateEl.value
         ? { QSO_DATE: `${t.getUTCFullYear()}${p2(t.getUTCMonth() + 1)}${p2(t.getUTCDate())}`, TIME_ON: `${p2(t.getUTCHours())}${p2(t.getUTCMinutes())}${p2(t.getUTCSeconds())}` }
         : time.values();
       const fields = {
-        CALL: call, ...tv, MODE: mode, BAND: $('#q-band').value, FREQ: mhz ? String(mhz) : '',
+        CALL: call, ...tv, MODE: mode, BAND: band, FREQ: mhz ? String(mhz) : '',
         RST_SENT: $('#q-rsts').value, RST_RCVD: $('#q-rstr').value, NAME: $('#q-name').value, COMMENT: $('#q-comment').value,
         ...(s.role === 'activator' ? refFields(s.myType, $('#my-ref').value, true) : {}),
         ...refFields($('#their-type').value, $('#their-ref').value, false),
       };
       if (mode === 'SSB') fields.SUBMODE = ssbSubmode(App.state.rig, mhz);
       const r = await api('qso:add', fields, { source: 'Quick log' });
+      // Everything the form held was read above, so nothing here depends on the page still being mounted.
       count += 1;
-      $('#count').textContent = `${count} this session`;
-      justLogged.unshift(`${r.call} · ${$('#q-band').value} ${mode}${$('#their-ref').value ? ` · ${$('#their-ref').value.toUpperCase()}` : ''}`);
+      justLogged.unshift(`${r.call} · ${band} ${mode}${theirRef ? ` · ${theirRef}` : ''}`);
       justLogged.length = Math.min(justLogged.length, 12);
+      if (session !== mounted) return;
+      $('#count').textContent = `${count} this session`;
       renderJust();
       clear();
     } catch (e) { toast(e.message, 'danger'); }
@@ -196,7 +210,7 @@
 
   App.pages.quick = {
     mount,
-    unmount() { clearInterval(followTimer); clearTimeout(wbTimer); el = null; },
+    unmount() { disposer.dispose(); session = null; clearInterval(followTimer); clearTimeout(wbTimer); el = null; },
     tick() { time?.tick(); },
     onEvent() {},
   };

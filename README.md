@@ -36,7 +36,7 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
     src/main/      Electron main process: cloudlog.js (API), logbook.js (queue/sync, backed by qso-cache.js),
                    qso-cache.js (SQLite QSO cache repository - the only module that touches the database),
                    rig.js (Hamlib + relay), adifserver.js, adif.js, contests.js, store.js (settings.json)
-    src/renderer/  UI (plain HTML/JS, Bootstrap theme): util.js, app.js, pages/*
+    src/renderer/  UI (plain HTML/JS, Bootstrap theme): util.js, page-guards.js, app.js, pages/*
     test/          node:test suites (mock Cloudlog server, real rigctld) and a headless UI smoke test
 
 ## Notes and limits
@@ -47,6 +47,13 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 - Opening the ADIF socket or the Hamlib port to "all interfaces" exposes them to your network; the default is this computer only.
 
 ## Changelog
+
+### 0.3.5
+- Fixed Live QSO logging duplicate records when you pressed Enter. The Enter-to-log handler was attached to the shared page container each time the page was opened and never removed, so every visit to Live QSO added another copy and one keypress saved the same QSO once per visit (eight records after eight visits). The handler is now removed when you leave the page, and a save that is already in progress ignores further Enter presses and button clicks until it finishes or fails.
+- Fixed Quick log logging duplicate records when you pressed Enter, for the same reason (four records after four visits).
+- Fixed the Quick log error `Cannot read properties of null (reading 'value')`. It came from Enter handlers left behind by other pages running against the Quick log form, and from reading form fields after a save or duplicate check finished once the page had already been left. Quick log now reads its form before saving and no longer touches the page if you have navigated away.
+- The Contest page had the same leftover Enter handler; it is now removed on leaving the page too (no other Contest behaviour changed).
+- Holding Enter down (key auto-repeat) no longer repeats the save.
 
 ### 0.3.4
 - Live QSO: configurable callbook lookup. Settings > Callbook Lookup lets you choose Disabled / No lookup, QRZ, or HamQTH; leaving the callsign field (not while you're still typing) fills Name, QTH and Grid Square from the provider when it has them, without overwriting anything you've typed yourself. Lookups are never repeated for the same callsign, and a failed or skipped lookup never blocks logging.

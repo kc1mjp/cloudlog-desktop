@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const { $, html, raw, api, toast, fmtDate, qsoRows, qsoHead, TimeFields, followRig, freqToBand, defaultRst, ssbSubmode, requireLogbook, fmtFreq } = App.util;
-  let el; let time; let followTimer; let wbTimer;
+  let el; let time; let followTimer; let wbTimer; let lookup; let leftCallField = false;
   let follow = true;
 
   const opts = (list, sel) => list.map((v) => html`<option ${v === sel ? 'selected' : ''}>${v}</option>`).join('');
@@ -23,7 +23,14 @@
               <div class="col-md-3"><label class="form-label" for="f-date">Date (UTC)</label><input id="f-date" class="form-control mono"></div>
               <div class="col-md-3"><label class="form-label" for="f-time">Time (UTC)</label><input id="f-time" class="form-control mono"></div>
               <div class="col-md-6"><label class="form-label" for="f-call">Callsign</label>
-                <input id="f-call" class="form-control call-input" autocomplete="off" spellcheck="false" autofocus></div>
+                <input id="f-call" class="form-control call-input" autocomplete="off" spellcheck="false" autofocus>
+                <div class="d-flex align-items-center flex-wrap gap-2 mt-1">
+                  <div class="btn-group btn-group-sm d-none" role="group" aria-label="Callsign profile links">
+                    <button type="button" class="btn btn-outline-secondary" id="open-qrz" data-provider="qrz" title="Open callsign on QRZ" aria-label="Open callsign on QRZ"><i class="fas fa-arrow-up-right-from-square me-1" aria-hidden="true"></i>QRZ</button>
+                    <button type="button" class="btn btn-outline-secondary" id="open-hamqth" data-provider="hamqth" title="Open callsign on HamQTH" aria-label="Open callsign on HamQTH"><i class="fas fa-arrow-up-right-from-square me-1" aria-hidden="true"></i>HamQTH</button>
+                  </div>
+                  <span id="lookup-status" class="small text-muted" role="status" aria-live="polite"></span>
+                </div></div>
             </div>
             <div class="row g-3 mb-3">
               <div class="col-md-2"><label class="form-label" for="f-mode">Mode</label><select id="f-mode" class="form-select">${raw(opts(modes, 'SSB'))}</select></div>
@@ -65,12 +72,38 @@
 
     f.mode.addEventListener('change', () => { $('#f-rsts').value = defaultRst(f.mode.value); $('#f-rstr').value = defaultRst(f.mode.value); });
     f.freq.addEventListener('input', () => { const b = freqToBand(f.freq.value); if (b) f.band.value = b; });
+    const CB = window.CallbookShared;
+    const field = (id) => ({ get: () => $(id).value, set: (v) => { $(id).value = v; } });
+    lookup = new CB.LookupCoordinator({
+      fields: { name: field('#f-name'), qth: field('#f-qth'), grid: field('#f-grid') },
+      lookup: (call) => api('callbook:lookup', call),
+      onStatus: showLookupStatus,
+    });
+    // Typing in a lookup field marks it as the operator's; programmatic fills do not fire "input".
+    for (const [k, id] of [['name', '#f-name'], ['qth', '#f-qth'], ['grid', '#f-grid']]) $(id).addEventListener('input', () => lookup.touch(k));
+    // The QRZ/HamQTH links and the callbook lookup itself both wait for the operator to leave the
+    // callsign field (blur): nothing is shown or requested while they're still typing.
+    leftCallField = false;
+    const linkGroup = () => el?.querySelector('[aria-label="Callsign profile links"]');
+    const updateLinks = () => linkGroup()?.classList.toggle('d-none', !(leftCallField && CB.isValidCallsign($('#f-call').value)));
+    for (const b of el.querySelectorAll('[data-provider]')) {
+      b.addEventListener('click', () => api('external:profile', b.dataset.provider, $('#f-call').value).catch((e) => toast(e.message, 'danger')));
+    }
+
     $('#f-call').addEventListener('input', (e) => {
       const v = e.target.value.toUpperCase().replace(/\s/g, '');
       e.target.value = v;
       if (v) time.freeze(); else time.reset();
       clearTimeout(wbTimer);
       wbTimer = setTimeout(() => checkWorked(v), 250);
+      leftCallField = false;
+      updateLinks();
+      lookup.input(v);
+    });
+    $('#f-call').addEventListener('blur', () => {
+      leftCallField = true;
+      updateLinks();
+      lookup?.flush();
     });
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); save(); } });
     $('#save').addEventListener('click', save);
@@ -122,8 +155,21 @@
     } catch (e) { toast(e.message, 'danger'); }
   }
 
+  // Lookup outcome line under the callsign. Offline / not-configured / disabled are informational, not errors.
+  function showLookupStatus(res) {
+    const box = $('#lookup-status');
+    if (!box) return;
+    if (!res || !res.message) { box.textContent = ''; box.className = 'small text-muted'; return; }
+    const info = ['offline', 'not_configured', 'invalid'].includes(res.status);
+    box.textContent = res.message; // remote-derived text is only ever assigned as text
+    box.className = `small ${info || res.status === 'not_found' ? 'text-muted' : 'text-warning'}`;
+  }
+
   function clear(all) {
     for (const id of ['f-call', 'f-name', 'f-qth', 'f-grid', 'f-comment']) $(`#${id}`).value = '';
+    lookup?.reset();
+    leftCallField = false;
+    el.querySelector('[aria-label="Callsign profile links"]')?.classList.add('d-none');
     if (all) { $('#f-pwr').value = ''; }
     time.reset();
     $('#wb').innerHTML = '<span class="text-muted">Type a callsign to check your logbook.</span>';
@@ -142,7 +188,7 @@
 
   App.pages.live = {
     mount,
-    unmount() { clearInterval(followTimer); clearTimeout(wbTimer); el = null; },
+    unmount() { clearInterval(followTimer); clearTimeout(wbTimer); lookup?.reset(); lookup = null; el = null; },
     tick() { time?.tick(); },
     onEvent({ type }) { if (el && type === 'qso:changed') refreshRecent(); },
   };

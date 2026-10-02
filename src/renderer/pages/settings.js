@@ -3,7 +3,7 @@
   const { $, html, raw, api, toast, confirmDialog } = App.util;
   let el; let tab = 'cloudlog'; let models = [];
 
-  const TABS = [['cloudlog', 'Cloudlog', 'fa-cloud'], ['logbooks', 'Logbooks', 'fa-book'], ['radio', 'Radio (CAT)', 'fa-tower-broadcast'], ['adif', 'Incoming ADIF', 'fa-plug'], ['appearance', 'Appearance', 'fa-palette'], ['about', 'About', 'fa-circle-info']];
+  const TABS = [['cloudlog', 'Cloudlog', 'fa-cloud'], ['logbooks', 'Logbooks', 'fa-book'], ['callbook', 'Callbook Lookup', 'fa-address-book'], ['radio', 'Radio (CAT)', 'fa-tower-broadcast'], ['adif', 'Incoming ADIF', 'fa-plug'], ['appearance', 'Appearance', 'fa-palette'], ['about', 'About', 'fa-circle-info']];
   const HAMLIB_MODES = ['USB', 'LSB', 'CW', 'CWR', 'AM', 'FM', 'WFM', 'RTTY', 'RTTYR', 'PKTUSB', 'PKTLSB', 'PKTFM'];
   const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; };
   const check = (v) => (v ? 'checked' : '');
@@ -22,7 +22,7 @@
       <ul class="nav nav-tabs mb-3">${raw(TABS.map(([id, label, icon]) => html`<li class="nav-item"><a class="nav-link ${id === tab ? 'active' : ''}" href="#" data-tab="${id}"><i class="fas ${icon} me-1"></i>${label}</a></li>`).join(''))}</ul>
       <div id="tab-body"></div>`;
     el.querySelectorAll('[data-tab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); tab = a.dataset.tab; draw(); }));
-    ({ cloudlog: drawCloudlog, logbooks: drawLogbooks, radio: drawRadio, adif: drawAdif, appearance: drawAppearance, about: drawAbout })[tab]();
+    ({ cloudlog: drawCloudlog, logbooks: drawLogbooks, callbook: drawCallbook, radio: drawRadio, adif: drawAdif, appearance: drawAppearance, about: drawAbout })[tab]();
   }
 
   async function save(patch, msg = 'Settings saved') {
@@ -73,6 +73,82 @@
     $('#s-auto').addEventListener('change', sy2); $('#s-int').addEventListener('change', sy2); $('#s-instant').addEventListener('change', sy2);
     $('#s-off').addEventListener('change', (e) => api('sync:setPaused', e.target.checked));
     $('#s-sidsave').addEventListener('click', async () => { await api('stations:setCurrent', $('#s-sid').value.trim() || null); toast('Logbook set'); });
+  }
+
+  // ---- Callbook lookup ------------------------------------------------------------
+  // Passwords never come back from the main process: a saved one shows as a placeholder, and leaving the
+  // field blank keeps it. Show/hide therefore only reveals what is being typed right now.
+  function drawCallbook() {
+    const cb = App.state.settings.callbook || { provider: 'none', qrz: {}, hamqth: {} };
+    const group = (id, label, help) => {
+      const p = cb[id] || {};
+      return html`<div id="cb-${id}" class="${cb.provider === id ? '' : 'd-none'}">
+        <div class="mb-3"><label class="form-label" for="cb-${id}-user">${label} username</label>
+          <input id="cb-${id}-user" class="form-control" style="max-width:20rem" value="${p.username || ''}" spellcheck="false" autocomplete="off"></div>
+        <div class="mb-2"><label class="form-label" for="cb-${id}-pass">${label} password</label>
+          <div class="input-group" style="max-width:20rem"><input id="cb-${id}-pass" type="password" class="form-control" placeholder="${p.hasPassword ? 'Saved - leave blank to keep' : ''}" spellcheck="false" autocomplete="off">
+            <button class="btn btn-outline-secondary" id="cb-${id}-show" type="button" aria-label="Show or hide ${label} password"><i class="fas fa-eye"></i></button></div>
+          ${p.hasPassword ? raw(html`<button class="btn btn-link btn-sm p-0 mt-1" id="cb-${id}-clear" type="button">Remove saved password</button>`) : ''}</div>
+        <div class="form-text mb-3">${help}</div></div>`;
+    };
+    $('#tab-body').innerHTML = html`
+    <div class="row g-3"><div class="col-lg-7"><div class="card"><div class="card-header">Callbook Lookup</div><div class="card-body">
+      <div class="mb-3"><label class="form-label" for="cb-provider">Lookup provider</label>
+        <select id="cb-provider" class="form-select" style="max-width:20rem">
+          <option value="none" ${cb.provider === 'none' ? 'selected' : ''}>Disabled / No lookup</option>
+          <option value="qrz" ${cb.provider === 'qrz' ? 'selected' : ''}>QRZ</option>
+          <option value="hamqth" ${cb.provider === 'hamqth' ? 'selected' : ''}>HamQTH</option></select>
+        <div class="form-text">Fills Name, QTH and Grid on the Live QSO page when you enter a callsign. Nothing is looked up while offline mode is on.</div></div>
+      ${raw(group('qrz', 'QRZ', 'QRZ callsign lookup needs a QRZ account with an active XML Logbook Data subscription. QRZ API keys only work with its logbook API, so lookups sign in with your QRZ username and password.'))}
+      ${raw(group('hamqth', 'HamQTH', 'Needs a free HamQTH account. Use the username and password you sign in to hamqth.com with.'))}
+      <div id="cb-problem" class="small text-warning mb-2" role="status"></div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><button class="btn btn-primary" id="cb-save">Save</button><button class="btn btn-outline-primary" id="cb-test">Save and test sign-in</button><span id="cb-result" class="small" role="status"></span></div>
+    </div></div></div>
+    <div class="col-lg-5"><div class="card"><div class="card-header">Good to know</div><div class="card-body small">
+      <p>Both providers' logins are remembered when you switch, so you can change back and forth.</p>
+      <p>Passwords are used only to sign in to the provider you select. They are stored encrypted with your system keyring when one is available, otherwise in the settings file like the Cloudlog API key, and are never shown again.</p>
+      <p class="mb-0">The QRZ and HamQTH buttons on the Live QSO page just open the callsign's public page in your browser. They need no login and work whichever provider is selected, even offline mode.</p>
+    </div></div></div></div>`;
+
+    const sel = $('#cb-provider');
+    sel.addEventListener('change', () => { for (const id of ['qrz', 'hamqth']) $(`#cb-${id}`).classList.toggle('d-none', sel.value !== id); });
+    for (const id of ['qrz', 'hamqth']) {
+      $(`#cb-${id}-show`).addEventListener('click', () => { const k = $(`#cb-${id}-pass`); k.type = k.type === 'password' ? 'text' : 'password'; });
+      $(`#cb-${id}-clear`)?.addEventListener('click', async () => {
+        await api('callbook:save', { [id]: { clearPassword: true } }).then((r) => { App.state.settings = r.settings; }).catch((e) => toast(e.message, 'danger'));
+        drawCallbook();
+      });
+    }
+    const collect = () => {
+      const patch = { provider: sel.value };
+      for (const id of ['qrz', 'hamqth']) patch[id] = { username: $(`#cb-${id}-user`).value.trim(), password: $(`#cb-${id}-pass`).value };
+      return patch;
+    };
+    const persist = async () => {
+      const r = await api('callbook:save', collect());
+      App.state.settings = r.settings;
+      $('#cb-problem').textContent = r.problems.join(' ');
+      for (const id of ['qrz', 'hamqth']) $(`#cb-${id}-pass`).value = ''; // never keep a typed password in the page
+      return r;
+    };
+    $('#cb-save').addEventListener('click', async () => {
+      try {
+        const r = await persist();
+        toast('Callbook settings saved');
+        drawCallbook(); // redraw so the "saved" password placeholders reflect what is stored
+        $('#cb-problem').textContent = r.problems.join(' ');
+      } catch (e) { toast(e.message, 'danger'); }
+    });
+    $('#cb-test').addEventListener('click', async () => {
+      const out = $('#cb-result');
+      out.textContent = 'Testing…'; out.className = 'small text-muted';
+      try {
+        await persist();
+        const t = await api('callbook:test');
+        out.className = `small ${t.status === 'ok' ? 'text-success' : t.status === 'offline' || t.status === 'disabled' ? 'text-muted' : 'text-danger'}`;
+        out.textContent = t.message;
+      } catch (e) { out.className = 'small text-danger'; out.textContent = e.message; }
+    });
   }
 
   // ---- Logbooks (choose the current one) ------------------------------------------

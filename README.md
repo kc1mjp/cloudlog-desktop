@@ -48,10 +48,26 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 
 ## Changelog
 
+### 0.3.4
+- Live QSO: configurable callbook lookup. Settings > Callbook Lookup lets you choose Disabled / No lookup, QRZ, or HamQTH; leaving the callsign field (not while you're still typing) fills Name, QTH and Grid Square from the provider when it has them, without overwriting anything you've typed yourself. Lookups are never repeated for the same callsign, and a failed or skipped lookup never blocks logging.
+- QRZ lookup signs in with your QRZ username and password (QRZ's documented callsign-lookup service requires this; QRZ API keys only work with its separate Logbook API, which can't look up callsigns), and requires an active QRZ XML Logbook Data subscription for full results. HamQTH lookup uses your HamQTH username and password and reuses its session until it expires.
+- Both providers' passwords are stored encrypted with your system keyring when one is available (Settings > Callbook Lookup shows show/hide controls and never redisplays a saved password), and switching providers keeps both providers' saved logins.
+- "Work offline" now also disables callbook lookup - no QRZ or HamQTH request is made while it's on - and the Live QSO screen stays fully usable either way.
+- Live QSO now has QRZ and HamQTH buttons next to the callsign field that open that callsign's public profile page in your browser. They stay hidden while you're typing and appear once you leave the field with a valid callsign. They need no login, work with either provider selected (or lookup disabled), and remain available offline.
+
 ### 0.3.3
 - The local QSO cache (queued/pending uploads, and each logbook's downloaded copy) now lives in a SQLite database (`qsocache.sqlite3`) instead of `qsos.json`/per-logbook JSON files. Built for logbooks well beyond 100,000 QSOs: indexed keyset pagination (no more full-logbook loads to render the Logbook page), indexed callsign history/dupe checks (Contest and Quick pages), and indexed pending/failed/synced lookups. All database access stays in the Electron main process, behind a dedicated cache module - the renderer only ever calls narrow, validated IPC methods.
 - Settings > Logbooks: a "Clear local cache" button per logbook. It only clears that logbook's already-synced/downloaded QSOs (so the next view/refresh re-downloads them) - it never touches another logbook, your settings, or a QSO still waiting to upload.
 - The old `qsos.json`/`remote-*.json` files, if present from a previous version, are left on disk untouched and unused; this release does not migrate or read them.
+
+### 0.3.2
+- Fixed a bug where deleting a QSO (or occasionally editing one) could leave the whole app unresponsive to typing until restarted. The cause was `window.confirm()` - Electron's native confirmation dialog - which can desync input handling on some Linux setups; all in-app confirmations now use an ordinary in-page dialog instead. As a second line of defense, any leftover dialog overlay is now also cleared automatically on every page navigation, so even an unrelated future bug of this kind can't strand you - clicking to another tab recovers instead of requiring a restart.
+- Moved the "Logbooks" picker (choosing the current logbook) from its own top-level tab into a tab inside Settings, alongside Cloudlog, Radio, Incoming ADIF, Appearance and About.
+- Radio settings: choosing "1 - Hamlib Dummy" as the model now hides Serial port, Speed and PTT method (none of them apply to a dummy rig), and shows a "Default frequency" (14.225 MHz) and "Default mode" (USB) pair above Extra Hamlib options - the dummy rig has no real hardware to remember a frequency between runs, so these give it a sane starting point instead of an arbitrary one.
+
+### 0.3.1
+- Radios can now be individually disabled. Every radio starts **off** by default when the app launches; check "Turn on automatically when the app launches" in that radio's settings to have it reconnect on its own, or flip its "Enabled" switch any time to start/stop it live.
+- Added a "Force RTS" option (Settings > Radio > Advanced, serial connections only) for rigs that wire PTT to the serial RTS line: Linux raises RTS the instant a serial port is opened, at the driver level, before Hamlib or anything else at the application layer can lower it - so PTT keys up for an instant every time rigctld starts. This uses an LD_PRELOAD shim (`force_rts.so`) that intercepts the `open()` call and clears RTS immediately, which is the standard workaround for this - Hamlib's own PTT/serial config can't prevent it, since the assertion happens before Hamlib's code runs at all.
 
 ### 0.1.0
 - System tray icon (same cloud icon as the window) with Show / Sync now / Quit. Closing the window now minimizes to the tray instead of quitting; the CAT connection and ADIF listener keep running in the background.
@@ -63,11 +79,3 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 - Data now always lives in `~/.config/cloudlog-desktop`, independent of how Electron would otherwise derive a folder name.
 - Fixed a related timing bug: the periodic auto-retry used to treat "never synced before" as "retry interval already elapsed," so the very first queued QSO after startup could upload almost immediately even with instant-upload turned off.
 
-### 0.3.1
-- Radios can now be individually disabled. Every radio starts **off** by default when the app launches; check "Turn on automatically when the app launches" in that radio's settings to have it reconnect on its own, or flip its "Enabled" switch any time to start/stop it live.
-- Added a "Force RTS" option (Settings > Radio > Advanced, serial connections only) for rigs that wire PTT to the serial RTS line: Linux raises RTS the instant a serial port is opened, at the driver level, before Hamlib or anything else at the application layer can lower it - so PTT keys up for an instant every time rigctld starts. This uses an LD_PRELOAD shim (`force_rts.so`) that intercepts the `open()` call and clears RTS immediately, which is the standard workaround for this - Hamlib's own PTT/serial config can't prevent it, since the assertion happens before Hamlib's code runs at all.
-
-### 0.3.2
-- Fixed a bug where deleting a QSO (or occasionally editing one) could leave the whole app unresponsive to typing until restarted. The cause was `window.confirm()` - Electron's native confirmation dialog - which can desync input handling on some Linux setups; all in-app confirmations now use an ordinary in-page dialog instead. As a second line of defense, any leftover dialog overlay is now also cleared automatically on every page navigation, so even an unrelated future bug of this kind can't strand you - clicking to another tab recovers instead of requiring a restart.
-- Moved the "Logbooks" picker (choosing the current logbook) from its own top-level tab into a tab inside Settings, alongside Cloudlog, Radio, Incoming ADIF, Appearance and About.
-- Radio settings: choosing "1 - Hamlib Dummy" as the model now hides Serial port, Speed and PTT method (none of them apply to a dummy rig), and shows a "Default frequency" (14.225 MHz) and "Default mode" (USB) pair above Extra Hamlib options - the dummy rig has no real hardware to remember a frequency between runs, so these give it a sane starting point instead of an arbitrary one.

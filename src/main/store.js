@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { CALLBOOK_DEFAULTS } = require('./callbook/config');
 
 function deepMerge(target, patch) {
   for (const [k, v] of Object.entries(patch || {})) {
@@ -68,6 +69,7 @@ const SETTINGS_DEFAULTS = {
   adifServer: { enabled: true, bind: '127.0.0.1', tcp: true, tcpPort: 2333, udp: true, udpPort: 2333 },
   quick: { myType: 'POTA', myRef: '', theirType: 'POTA', role: 'activator' },
   contest: { id: 'CQ-WW-SSB', customId: '', sentExchange: '', serial: 1, startedAt: 0 },
+  callbook: CALLBOOK_DEFAULTS,
 };
 
 /** Older settings files had one `rig`/`relay` pair; fold them into `rigs[0]` in place. */

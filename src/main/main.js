@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, safeStorage } = require('electron');
 
 const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs } = require('./store');
 const { CloudlogClient, CloudlogError } = require('./cloudlog');
@@ -12,6 +12,10 @@ const { RigManager } = require('./rig');
 const { AdifServer } = require('./adifserver');
 const { CONTESTS, contestById, dupeMatcher } = require('./contests');
 const { BAND_NAMES, MODES } = require('./bands');
+const { CallbookService } = require('./callbook');
+const callbookConfig = require('./callbook/config');
+const { createSecretBox } = require('./secrets');
+const { profileUrl } = require('../renderer/callbook-shared');
 
 // A fixed, predictable data directory regardless of how Electron would
 // otherwise derive one from the app/product name.
@@ -113,20 +117,37 @@ async function saveRigsAndApply(applyIds) {
   await rigs.reconcile();
   for (const id of applyIds || []) await rigs.applyOne(id);
   send('rig', rigStatusPayload());
-  send('settings', settings.data);
+  send('settings', publicSettings());
 }
 
 function rigStatusPayload() {
   return { activeId: settings.data.activeRigId, rigs: rigs.statusAll() };
 }
 
+// ---- Callbook lookup ---------------------------------------------------------------
+// Provider requests run here in the main process so credentials and provider replies never reach the
+// renderer (which has a strict CSP); it only receives the normalised name / QTH / grid result.
+const secretBox = createSecretBox({ safeStorage });
+const callbookLookup = CallbookService.create({
+  getConfig: () => callbookConfig.resolveConfig(settings.data.callbook, secretBox),
+  isOffline: () => !!settings.data.sync.paused, // the "Work offline" switch
+  fetchImpl: (...a) => fetch(...a),
+});
+
+/** settings.data as the renderer may see it: callbook passwords are replaced by a has-password flag. */
+function publicSettings() {
+  return { ...settings.data, callbook: callbookConfig.publicConfig(settings.data.callbook) };
+}
+
 const api = {
   'app:info': () => ({ version: app.getVersion(), dataDir: app.getPath('userData'), bands: BAND_NAMES, modes: MODES, contests: CONTESTS, hamlib: rigs.info() }),
 
-  'settings:get': () => settings.data,
+  'settings:get': () => publicSettings(),
   'settings:set': async (patch) => {
     const before = JSON.parse(JSON.stringify(settings.data));
-    deepMerge(settings.data, patch);
+    // Callbook credentials only change through callbook:save, so a generic patch can never touch them.
+    const { callbook: _callbook, ...safePatch } = patch || {};
+    deepMerge(settings.data, safePatch);
     settings.saveNow();
     const now = settings.data;
     if (JSON.stringify(before.adifServer) !== JSON.stringify(now.adifServer)) await adif.apply();
@@ -137,7 +158,25 @@ const api = {
       log.ping();
     }
     send('sync', log.status());
-    return settings.data;
+    return publicSettings();
+  },
+
+  'callbook:save': (patch) => {
+    callbookConfig.applyPatch(settings.data.callbook, patch, secretBox);
+    settings.saveNow();
+    callbookLookup.invalidate(); // new provider or credentials apply immediately, no restart
+    const pub = publicSettings();
+    send('settings', pub);
+    return { settings: pub, problems: callbookConfig.validate(settings.data.callbook, secretBox) };
+  },
+  'callbook:lookup': (call) => callbookLookup.lookup(typeof call === 'string' ? call.slice(0, 32) : ''),
+  'callbook:test': () => callbookLookup.test(),
+  // Profile pages are opened from a URL built here from a fixed provider table, never from renderer-supplied URLs.
+  'external:profile': (provider, call) => {
+    const url = profileUrl(provider, call);
+    if (!url) throw new Error('Enter a valid callsign first');
+    shell.openExternal(url);
+    return true;
   },
 
   'cloudlog:test': async () => {
@@ -162,15 +201,15 @@ const api = {
     }
     settings.saveNow();
     log.online = true;
-    send('settings', settings.data);
+    send('settings', publicSettings());
     return stations;
   },
   'stations:setCurrent': (id) => {
     settings.data.cloudlog.currentStationId = id ? String(id) : null;
     settings.saveNow();
-    send('settings', settings.data);
+    send('settings', publicSettings());
     send('qso:changed', {});
-    return settings.data;
+    return publicSettings();
   },
 
   'qso:add': (fields, opts = {}) => {
@@ -237,7 +276,7 @@ const api = {
     await rigs.removeOne(id);
     lastRadio.delete(id);
     send('rig', rigStatusPayload());
-    send('settings', settings.data);
+    send('settings', publicSettings());
     return rigStatusPayload();
   },
   'rig:setActive': (id) => {
@@ -245,7 +284,7 @@ const api = {
     settings.data.activeRigId = id || null;
     settings.saveNow();
     send('rig', rigStatusPayload());
-    send('settings', settings.data);
+    send('settings', publicSettings());
     return rigStatusPayload();
   },
 

@@ -138,6 +138,43 @@ async function main() {
     await sleep(2000);
     check('sync now cleared the queue', (await run(`document.querySelectorAll('#queue [data-edit]').length`)) === 0);
 
+    // ---- Callbook lookup (0.3.4) ----------------------------------------------
+    await go('settings?tab=callbook', 500);
+    await shot('settings-callbook-disabled');
+    check('callbook tab defaults to Disabled', (await run(`document.querySelector('#cb-provider').value`)) === 'none');
+    await run(`(() => { document.getElementById('cb-provider').value='qrz'; document.getElementById('cb-provider').dispatchEvent(new Event('change')); })()`);
+    await sleep(150);
+    await shot('settings-callbook-qrz');
+    check('QRZ group shown, HamQTH hidden', (await run(`!document.getElementById('cb-qrz').classList.contains('d-none') && document.getElementById('cb-hamqth').classList.contains('d-none')`)));
+    await run(`(() => { document.getElementById('cb-qrz-user').value='smoketest'; document.getElementById('cb-qrz-pass').value='smoke-pass-1234'; })()`);
+    await run(`document.getElementById('cb-save').click()`);
+    await sleep(400);
+    await shot('settings-callbook-qrz-saved');
+    check('QRZ password field cleared after save (not redisplayed)', (await run(`document.getElementById('cb-qrz-pass').value`)) === '');
+    check('QRZ password placeholder shows Saved', /Saved/.test(await run(`document.getElementById('cb-qrz-pass').placeholder`)));
+    check('provider persisted to qrz', (await run(`window.App.state.settings.callbook.provider`)) === 'qrz');
+    check('no password value present anywhere in settings payload', !JSON.stringify(await run(`window.App.state.settings`)).includes('smoke-pass-1234'));
+    // Switch lookup back off before touching Live QSO below: this smoke test must not make a real
+    // network request to a live QRZ/HamQTH server, so the callsign field is exercised with lookup disabled.
+    await run(`(async () => { await window.cl.call('callbook:save', { provider: 'none' }); })()`);
+    await sleep(200);
+
+    await go('live', 500);
+    const linksHidden = () => run(`document.querySelector('[aria-label="Callsign profile links"]').classList.contains('d-none')`);
+    await run(`(() => { const c=document.querySelector('#f-call'); c.value='w1aw'; c.dispatchEvent(new Event('input')); })()`);
+    await sleep(100);
+    check('profile links stay hidden while typing', await linksHidden());
+    check('no lookup performed while typing (status still empty)', (await run(`document.getElementById('lookup-status').textContent`)) === '');
+    await run(`document.querySelector('#f-call').dispatchEvent(new Event('blur'))`);
+    await sleep(150); // lookup is disabled so this makes no network request
+    await shot('live-lookup-status');
+    check('profile links revealed only after leaving the field with a valid callsign', !(await linksHidden()));
+    check('lookup runs on leaving the field (disabled provider -> no status message, no error thrown)', (await run(`document.getElementById('lookup-status').textContent`)) === '');
+    await run(`(() => { document.querySelector('#f-call').value=''; document.querySelector('#f-call').dispatchEvent(new Event('input')); })()`);
+    check('clearing the callsign hides the links again immediately', await linksHidden());
+    await run(`document.querySelector('#f-call').dispatchEvent(new Event('blur'))`);
+    check('leaving an empty callsign field keeps the links hidden', await linksHidden());
+
     // ---- delete-before-upload still works ------------------------------------
     await go('quick', 400);
     await run(`(() => { const c=document.querySelector('#q-call'); c.value='n5del'; c.dispatchEvent(new Event('input')); })()`);

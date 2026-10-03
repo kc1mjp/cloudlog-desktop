@@ -4,6 +4,13 @@ body { min-height: 100vh; }
 #mainnav .nav-link { white-space: nowrap; padding: .4rem .7rem; }
 #clock { white-space: nowrap; }
 .navbar .nav-link.active { font-weight: 600; background: rgba(255, 255, 255, .15); border-radius: .3rem; }
+.brand { flex-shrink: 0; }
+.brand-cloud, .nav-hamburger { background: none; border: 0; color: inherit; cursor: pointer; border-radius: .3rem; line-height: 1; }
+.brand-cloud { padding: .2rem .35rem; }
+.nav-hamburger { padding: .4rem .6rem; font-size: 1.15rem; color: #fff; }
+.brand-cloud:hover, .nav-hamburger:hover, .nav-hamburger.active { background: rgba(255, 255, 255, .2); }
+.brand-cloud:focus-visible, .nav-hamburger:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.about-info dt { font-weight: 600; }
 .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .7rem; border-radius: 1rem; background: rgba(255, 255, 255, .16); white-space: nowrap; user-select: none; }
 .chip:hover { background: rgba(255, 255, 255, .28); }
 .dot { width: .6rem; height: .6rem; border-radius: 50%; display: inline-block; background: #adb5bd; }

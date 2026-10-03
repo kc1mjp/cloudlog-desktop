@@ -24,6 +24,12 @@ function findHamlib(name, { explicit, resourcesPath } = {}) {
   return cands.find(isExecutable) || null;
 }
 
+/** Extracts the version from `rigctld --version` output, e.g. "rigctld Hamlib 4.5.5 2023-04-29..." -> "4.5.5". */
+function parseHamlibVersion(out) {
+  const m = /Hamlib\s+(\d+(?:\.\d+)*(?:[-+~.\w]*)?)/i.exec(String(out || ''));
+  return m ? m[1] : null;
+}
+
 function hamlibEnv(bin, resourcesPath) {
   const env = { ...process.env };
   if (resourcesPath && bin && bin.startsWith(path.join(resourcesPath, 'hamlib'))) {
@@ -512,6 +518,22 @@ class RigManager extends EventEmitter {
   listPorts() { return listSerialPorts(); }
 
   info() { return { rigctld: findHamlib('rigctld', { resourcesPath: this.resourcesPath }), forceRts: findForceRts(this.resourcesPath) }; }
+
+  /** For Settings > About: the rigctld in use (the active radio's configured path, else auto-detected) and its Hamlib version. Never throws. */
+  async aboutInfo() {
+    const s = this.getSettings();
+    const active = (s.rigs || []).find((r) => r.id === s.activeRigId) || (s.rigs || [])[0];
+    const rigctld = findHamlib('rigctld', { explicit: active && active.rigctldPath, resourcesPath: this.resourcesPath });
+    if (!rigctld) return { rigctld: null, hamlibVersion: null };
+    if (!this.versionCache) this.versionCache = new Map();
+    if (!this.versionCache.has(rigctld)) {
+      const out = await new Promise((resolve) => {
+        execFile(rigctld, ['--version'], { timeout: 3000, env: hamlibEnv(rigctld, this.resourcesPath) }, (err, stdout, stderr) => resolve(err ? '' : `${stdout}\n${stderr}`));
+      });
+      this.versionCache.set(rigctld, parseHamlibVersion(out));
+    }
+    return { rigctld, hamlibVersion: this.versionCache.get(rigctld) };
+  }
 }
 
-module.exports = { RigService, RigManager, findHamlib, findForceRts, parseRigList, listSerialPorts };
+module.exports = { RigService, RigManager, findHamlib, findForceRts, parseRigList, parseHamlibVersion, listSerialPorts };

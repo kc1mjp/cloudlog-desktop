@@ -413,12 +413,17 @@
     el.querySelectorAll('input[name=theme]').forEach((i) => i.addEventListener('change', async () => { App.applyTheme(i.value); await api('settings:set', { theme: i.value }); }));
   }
 
-  function drawAbout() {
-    const i = App.state.info;
-    $('#tab-body').innerHTML = html`<div class="card" style="max-width:40rem"><div class="card-header">Cloudlog Desktop</div><div class="card-body small">
-      <p>Version ${i.version}. An unofficial desktop companion for Cloudlog: log with or without a connection, drive your radio through Hamlib and take QSOs from other programs.</p>
-      <div class="mb-1"><b>Data folder:</b> <span class="mono">${i.dataDir}</span></div>
-      <div><b>Hamlib rigctld:</b> <span class="mono">${i.hamlib.rigctld || 'not found'}</span></div></div></div>`;
+  async function drawAbout() {
+    $('#tab-body').innerHTML = html`<div class="card" style="max-width:40rem"><div class="card-header">Cloudlog Desktop</div><div class="card-body small" id="about-body"><span class="text-muted">Loading…</span></div></div>`;
+    let about;
+    try { about = await api('app:about'); } catch { about = { version: App.state.info.version, dataDir: App.state.info.dataDir, rigctld: App.state.info.hamlib.rigctld }; }
+    const body = $('#about-body');
+    if (!body || tab !== 'about') return; // left the tab (or page) while loading
+    body.innerHTML = AboutShared.renderAboutBody(about);
+    body.querySelectorAll('[data-ext]').forEach((a) => a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try { const r = await api('external:about', a.dataset.ext); if (r && !r.ok) toast(r.message, 'danger'); } catch (err) { toast(err.message, 'danger'); }
+    }));
   }
 
   App.pages.settings = {

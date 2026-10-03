@@ -58,6 +58,7 @@
     App.current = r;
     App.util.cleanupStrayModalArtifacts();
     $$('#mainnav .nav-link').forEach((a) => a.classList.toggle('active', a.dataset.route === r));
+    $('#btn-settings').classList.toggle('active', r === 'settings');
     const el = $('#page');
     el.innerHTML = '';
     App.pages[r].mount(el);
@@ -89,6 +90,14 @@
     App.pages[App.current]?.tick?.();
   }
 
+  // The main process reads the saved address, validates it (http/https only) and opens it in the default browser.
+  async function openServer() {
+    try {
+      const r = await api('external:cloudlog');
+      if (r && !r.ok) toast(r.message || 'Configure a valid Cloudlog address in Settings before opening it.', 'warning');
+    } catch (e) { toast(e.message, 'danger'); }
+  }
+
   async function init() {
     window.cl.on(onEvent);
     const [settings, rigData, sync, adif, info] = await Promise.all([api('settings:get'), api('rig:status'), api('sync:status'), api('adif:status'), api('app:info')]);
@@ -99,6 +108,8 @@
     $('#chip-logbook').addEventListener('click', () => { location.hash = '#/settings?tab=logbooks'; });
     $('#chip-rig').addEventListener('click', () => { location.hash = '#/settings?tab=radio'; });
     $('#chip-sync').addEventListener('click', () => { location.hash = '#/logbook'; });
+    $('#open-server').addEventListener('click', openServer);
+    $('#btn-settings').addEventListener('click', () => { location.hash = '#/settings'; });
     window.addEventListener('hashchange', route);
     setInterval(clock, 500);
     clock();

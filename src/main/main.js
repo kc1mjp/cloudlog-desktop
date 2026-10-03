@@ -16,6 +16,7 @@ const { CallbookService } = require('./callbook');
 const callbookConfig = require('./callbook/config');
 const { createSecretBox } = require('./secrets');
 const { profileUrl } = require('../renderer/callbook-shared');
+const { createExternalLinks } = require('./external-links');
 
 // A fixed, predictable data directory regardless of how Electron would
 // otherwise derive one from the app/product name.
@@ -139,8 +140,13 @@ function publicSettings() {
   return { ...settings.data, callbook: callbookConfig.publicConfig(settings.data.callbook) };
 }
 
+const externalLinks = createExternalLinks({ getCloudlogUrl: () => settings.data.cloudlog.url, openExternal: (url) => shell.openExternal(url) });
+
 const api = {
   'app:info': () => ({ version: app.getVersion(), dataDir: app.getPath('userData'), bands: BAND_NAMES, modes: MODES, contests: CONTESTS, hamlib: rigs.info() }),
+
+  // Settings > About: running version, rigctld path / Hamlib version in use, and the actual data folder.
+  'app:about': async () => ({ version: app.getVersion(), dataDir: app.getPath('userData'), ...(await rigs.aboutInfo()) }),
 
   'settings:get': () => publicSettings(),
   'settings:set': async (patch) => {
@@ -178,6 +184,11 @@ const api = {
     shell.openExternal(url);
     return true;
   },
+
+  // The cloud icon and the About links: the renderer sends no URL, so only the saved Cloudlog address (http/https only)
+  // or a fixed About link can ever reach the browser.
+  'external:cloudlog': () => externalLinks.openCloudlog(),
+  'external:about': (key) => externalLinks.openAbout(key),
 
   'cloudlog:test': async () => {
     if (!client.configured()) return { ok: false, message: 'Enter the Cloudlog address and API key first' };

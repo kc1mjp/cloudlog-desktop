@@ -31,14 +31,6 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
     npm test             # backend tests (needs rigctld: apt install libhamlib-utils)
     npm run dist         # AppImage + deb into dist/
 
-## Layout
-
-    src/main/      Electron main process: cloudlog.js (API), logbook.js (queue/sync, backed by qso-cache.js),
-                   qso-cache.js (SQLite QSO cache repository - the only module that touches the database),
-                   rig.js (Hamlib + relay), adifserver.js, adif.js, contests.js, store.js (settings.json)
-    src/renderer/  UI (plain HTML/JS, Bootstrap theme): util.js, page-guards.js, app.js, pages/*
-    test/          node:test suites (mock Cloudlog server, real rigctld) and a headless UI smoke test
-
 ## Notes and limits
 
 - API endpoints used: `api/auth`, `api/station_info`, `api/qso`, `api/radio`, `api/get_contacts_adif`. Logbook download needs a server version that has the last one.
@@ -47,6 +39,11 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 - Opening the ADIF socket or the Hamlib port to "all interfaces" exposes them to your network; the default is this computer only.
 
 ## Changelog
+
+### 0.3.6
+- The top bar now reads "Cloudlog Desktop". The cloud icon beside it is a button that opens your configured Cloudlog server (Settings > Cloudlog > Address) in your default browser; only http and https addresses are opened, and an empty or invalid address shows a message pointing you to Settings instead.
+- Settings moved to a hamburger button ("Settings menu") at the far right of the top bar, replacing the Settings entry in the main navigation.
+- Settings > About now lists the running version, the detected Hamlib version, the `rigctld` in use and the real data folder (with "Not available" / "Not configured" when they cannot be determined), and links to Cloudlog, WaveLog, the project's GitHub page and the GPLv3 license, all opened in your default browser.
 
 ### 0.3.5
 - Fixed Live QSO logging duplicate records when you pressed Enter. The Enter-to-log handler was attached to the shared page container each time the page was opened and never removed, so every visit to Live QSO added another copy and one keypress saved the same QSO once per visit (eight records after eight visits). The handler is now removed when you leave the page, and a save that is already in progress ignores further Enter presses and button clicks until it finishes or fails.

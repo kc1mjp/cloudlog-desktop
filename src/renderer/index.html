@@ -10,14 +10,16 @@
 </head>
 <body>
   <nav class="navbar navbar-expand navbar-dark bg-primary px-3" id="topnav">
-    <a class="navbar-brand fw-bold" href="#/dashboard"><i class="fas fa-cloud me-2"></i>Cloudlog</a>
+    <div class="navbar-brand fw-bold d-flex align-items-center brand">
+      <button type="button" id="open-server" class="brand-cloud me-2" title="Open configured Cloudlog server in browser" aria-label="Open configured Cloudlog server in browser"><i class="fas fa-cloud" aria-hidden="true"></i></button>
+      <a class="text-reset text-decoration-none" href="#/dashboard">Cloudlog Desktop</a>
+    </div>
     <ul class="navbar-nav me-auto" id="mainnav">
       <li class="nav-item"><a class="nav-link" data-route="dashboard" href="#/dashboard">Dashboard</a></li>
       <li class="nav-item"><a class="nav-link" data-route="live" href="#/live">Live QSO</a></li>
       <li class="nav-item"><a class="nav-link" data-route="quick" href="#/quick">Quick Log</a></li>
       <li class="nav-item"><a class="nav-link" data-route="contest" href="#/contest">Contest</a></li>
       <li class="nav-item"><a class="nav-link" data-route="logbook" href="#/logbook">Logbook</a></li>
-      <li class="nav-item"><a class="nav-link" data-route="settings" href="#/settings">Settings</a></li>
     </ul>
     <div class="d-flex align-items-center gap-2 text-white small">
       <span id="chip-logbook" class="chip" role="button" tabindex="0" title="Current logbook (click to change)"></span>
@@ -25,11 +27,13 @@
       <span id="chip-sync" class="chip" role="button" tabindex="0" title="Upload status"></span>
       <span id="clock" class="font-monospace ms-1" title="UTC"></span>
     </div>
+    <button type="button" id="btn-settings" class="nav-hamburger ms-3" title="Settings menu" aria-label="Settings menu"><i class="fas fa-bars" aria-hidden="true"></i></button>
   </nav>
   <main id="page" class="container-fluid py-3 px-4"></main>
   <div id="toasts" class="toast-stack"></div>
   <script src="vendor/bootstrap.bundle.min.js"></script>
   <script src="callbook-shared.js"></script>
+  <script src="about-shared.js"></script>
   <script src="page-guards.js"></script>
   <script src="util.js"></script>
   <script src="pages/dashboard.js"></script>

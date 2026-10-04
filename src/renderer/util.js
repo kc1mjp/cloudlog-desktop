@@ -114,18 +114,29 @@ const stateIcon = (r) => {
   return '';
 };
 
-function qsoRows(rows, { extra } = {}) {
-  if (!rows.length) return html`<tr><td colspan="9" class="text-muted text-center py-3">No QSOs yet</td></tr>`;
+/** Contact values come from ADIF/JSON and may be missing or non-strings; a missing value renders as an empty cell, never "undefined"/"null". */
+const cellText = (v) => (v === undefined || v === null ? '' : String(v).trim());
+
+/** Optional columns shown between RST and the status icon. The Dashboard shows [country]; the Logbook shows [grid, country]. */
+const QSO_COLUMNS = {
+  grid: { head: 'Grid', cell: (r) => html`<td class="mono">${cellText(r.GRIDSQUARE)}</td>` },
+  country: { head: 'Country', cell: (r) => html`<td class="wrap">${cellText(r.COUNTRY)}</td>` },
+};
+
+const qsoColumns = (cols) => cols.map((k) => QSO_COLUMNS[k]).filter(Boolean);
+
+function qsoRows(rows, cols = ['country']) {
+  const extra = qsoColumns(cols);
+  if (!rows.length) return html`<tr><td colspan="${7 + extra.length}" class="text-muted text-center py-3">No QSOs yet</td></tr>`;
   return rows.map((r) => html`<tr>
     <td>${fmtDate(r.QSO_DATE)}</td><td>${fmtTime(r.TIME_ON)}</td>
     <td class="fw-bold">${r.CALL}</td><td>${r.BAND}</td><td>${r.MODE}${r.SUBMODE && r.SUBMODE !== r.MODE ? ` (${r.SUBMODE})` : ''}</td>
     <td>${r.RST_SENT || r.RST_RCVD ? `${r.RST_SENT || ''} / ${r.RST_RCVD || ''}` : ''}</td>
-    ${raw(extra ? extra(r) : html`<td class="wrap">${[r.NAME, r.QTH, r.GRIDSQUARE].filter(Boolean).join(', ')}</td>`)}
-    <td class="wrap">${[r.SOTA_REF, r.POTA_REF, r.IOTA, r.COMMENT].filter(Boolean).join(' · ')}</td>
+    ${raw(extra.map((c) => c.cell(r)).join(''))}
     <td class="text-end">${raw(stateIcon(r))}</td></tr>`).join('');
 }
 
-const qsoHead = (mid = 'Station') => html`<thead><tr><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>${mid}</th><th>Notes</th><th></th></tr></thead>`;
+const qsoHead = (cols = ['country']) => html`<thead><tr><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th>${raw(qsoColumns(cols).map((c) => `<th>${c.head}</th>`).join(''))}<th></th></tr></thead>`;
 
 function currentStation() {
   const c = App.state.settings.cloudlog;

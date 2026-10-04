@@ -25,10 +25,31 @@ body { min-height: 100vh; }
 .table-tight td.wrap { white-space: normal; }
 .dupe-banner { font-weight: 700; letter-spacing: .04em; }
 .seg .btn-check:checked + .btn { font-weight: 700; }
-.scroll-y { max-height: 62vh; overflow: auto; }
 .stat-num { font-size: 2.1rem; line-height: 1; font-weight: 600; }
 .card-header .badge { font-weight: 500; }
 kbd { font-size: .8em; }
 @media (max-width: 1500px) { .chip .label-long { display: none; } #mainnav .nav-link { padding: .4rem .5rem; } }
 .btn { white-space: nowrap; }
 body { overflow-x: hidden; }
+/* Logbook Previous/Next: always visible, in every theme. Bootstrap's btn-outline-secondary is #e9ecef (Cerulean) or
+   #444/#555 (Darkly/Cyborg) - the same colour as the card footer behind it - so the buttons only appeared on hover.
+   Text uses the body colour; the border uses --bs-secondary-color (a 75% tint of the text colour), which contrasts with
+   the footer in light and dark themes. Disabled keeps the same look, just a little dimmer, so it never disappears. */
+.pager-btn { --bs-btn-color: var(--bs-body-color); --bs-btn-bg: var(--bs-body-bg); --bs-btn-border-color: var(--bs-secondary-color);
+  --bs-btn-hover-color: var(--bs-body-color); --bs-btn-hover-bg: var(--bs-tertiary-bg); --bs-btn-hover-border-color: var(--bs-body-color);
+  --bs-btn-active-color: var(--bs-body-color); --bs-btn-active-bg: var(--bs-secondary-bg); --bs-btn-active-border-color: var(--bs-body-color);
+  --bs-btn-disabled-color: var(--bs-body-color); --bs-btn-disabled-bg: var(--bs-body-bg); --bs-btn-disabled-border-color: var(--bs-secondary-color);
+  --bs-btn-disabled-opacity: .7; }
+
+/* Logbook page: fit the window instead of a fixed table height, so there is one scrollbar (the table's) and the Previous/Next
+   footer is always on screen. body.fill-viewport is set by pages/logbook.js while that page is open. The nav bar keeps its
+   height, #page takes the rest, the upload queue keeps its natural height with its list capped relative to the window (it scrolls on its own if it is long) and the Logbook card
+   gets whatever is left. Only if the window is shorter than the header + a few rows + the footer does #page itself scroll. */
+body.fill-viewport { height: 100vh; height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+body.fill-viewport #topnav { flex: 0 0 auto; }
+body.fill-viewport #page { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; }
+body.fill-viewport #queue { flex: 0 0 auto; }
+body.fill-viewport #queue .table-responsive { max-height: clamp(3.5rem, 15vh, 8rem); overflow-y: auto; }
+body.fill-viewport #lb-card { flex: 1 1 auto; min-height: 12rem; display: flex; flex-direction: column; }
+body.fill-viewport #lb-card > .card-header, body.fill-viewport #lb-card > .card-footer, body.fill-viewport #lb-card > #lb-unsupported { flex: 0 0 auto; }
+body.fill-viewport .lb-scroll { flex: 1 1 auto; min-height: 5rem; overflow: auto; }

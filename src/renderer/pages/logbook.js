@@ -3,11 +3,13 @@
   const { $, html, raw, api, toast, qsoRows, qsoHead, fmtDate, fmtTime } = App.util;
 
   // ============================ Logbook (QSO list + upload queue) ================
+  const COLUMNS = ['grid', 'country']; // Date, UTC, Call, Band, Mode, RST, Grid, Country
   let el; let page = 1; let filters = { q: '', band: '', mode: '' }; let searchTimer; let sel = null;
   let downloadUnsupported = false; // sticky for this session once the server tells us it has no get_contacts_adif
 
   function mount(root) {
     el = root;
+    document.body.classList.add('fill-viewport'); // Logbook sizes itself to the window: only the table scrolls (see styles.css)
     const { settings, info } = App.state;
     const c = settings.cloudlog;
     const query = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -15,7 +17,7 @@
     page = 1;
     el.innerHTML = html`
     <div id="queue"></div>
-    <div class="card">
+    <div class="card" id="lb-card">
       <div class="card-header d-flex flex-wrap gap-2 align-items-center">
         <span class="me-2">Logbook</span>
         <select id="lb-station" class="form-select form-select-sm" style="width:auto">${raw(c.stations.length ? c.stations.map((s) => html`<option value="${s.id}" ${s.id === String(sel) ? 'selected' : ''}>${s.name} (${s.callsign})</option>`).join('') : html`<option value="${sel || ''}">${sel ? `Logbook #${sel}` : 'No logbook'}</option>`)}</select>
@@ -32,10 +34,10 @@
         </div>
       </div>
       <div id="lb-unsupported" class="alert alert-warning small mb-0 rounded-0 d-none border-start-0 border-end-0"></div>
-      <div class="table-responsive scroll-y"><table class="table table-striped table-hover table-tight mb-0">${raw(qsoHead())}<tbody id="lb-body"></tbody></table></div>
-      <div class="card-footer d-flex justify-content-between align-items-center">
+      <div class="table-responsive lb-scroll"><table class="table table-striped table-hover table-tight mb-0">${raw(qsoHead(COLUMNS))}<tbody id="lb-body"></tbody></table></div>
+      <div class="card-footer d-flex flex-wrap gap-2 justify-content-between align-items-center">
         <span class="small text-muted" id="lb-count"></span>
-        <div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" id="lb-prev">Previous</button><button class="btn btn-outline-secondary" id="lb-next">Next</button></div>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Logbook pages"><button type="button" class="btn pager-btn" id="lb-prev">Previous</button><button type="button" class="btn pager-btn" id="lb-next">Next</button></div>
       </div>
     </div>`;
 
@@ -84,7 +86,7 @@
     if (!el) return;
     const r = await api('log:query', { stationId: sel, ...filters, page, pageSize: 50 }).catch((e) => { toast(e.message, 'danger'); return null; });
     if (!r || !el) return;
-    $('#lb-body').innerHTML = qsoRows(r.rows.map((x) => ({ ...x })));
+    $('#lb-body').innerHTML = qsoRows(r.rows.map((x) => ({ ...x })), COLUMNS);
     const from = r.total ? (r.page - 1) * r.pageSize + 1 : 0;
     $('#lb-count').textContent = `${from}–${Math.min(r.total, r.page * r.pageSize)} of ${r.total}`;
     $('#lb-prev').disabled = r.page <= 1;
@@ -193,7 +195,7 @@
 
   App.pages.logbook = {
     mount,
-    unmount() { clearTimeout(searchTimer); el = null; },
+    unmount() { clearTimeout(searchTimer); document.body.classList.remove('fill-viewport'); el = null; },
     onEvent({ type }) { if (!el) return; if (type === 'qso:changed') { load(); drawQueue(); } if (type === 'sync' || type === 'settings') drawQueue(); },
   };
 

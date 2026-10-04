@@ -40,6 +40,12 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 
 ## Changelog
 
+### 0.3.7
+- Dashboard: the Recent QSOs table no longer has a Station column, and its Notes column is replaced by Country.
+- Logbook: Station is replaced by Grid (the contact's grid square) and Notes is replaced by Country. A contact with no grid or country simply shows an empty cell.
+- Logbook: the Previous and Next buttons are now clearly visible at all times (in the default Cerulean theme they were pale grey on white and only showed up when hovered). They are still disabled on the first and last page.
+- Logbook: the table now fits the window instead of a fixed height, so there is a single scrollbar (the table's) and Previous/Next stay on screen at any window size. The upload queue above it keeps its size, and a long queue list scrolls on its own.
+
 ### 0.3.6
 - The top bar now reads "Cloudlog Desktop". The cloud icon beside it is a button that opens your configured Cloudlog server (Settings > Cloudlog > Address) in your default browser; only http and https addresses are opened, and an empty or invalid address shows a message pointing you to Settings instead.
 - Settings moved to a hamburger button ("Settings menu") at the far right of the top bar, replacing the Settings entry in the main navigation.

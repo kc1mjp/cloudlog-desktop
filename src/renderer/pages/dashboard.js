@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const { $, html, raw, api, toast, qsoRows, qsoHead, fmtFreq, currentStation } = App.util;
+  const COLUMNS = ['country']; // Date, UTC, Call, Band, Mode, RST, Country
   let el; let timer;
 
   async function draw() {
@@ -37,7 +38,7 @@
       </div>
       <div class="row g-3">
         <div class="col-lg-9"><div class="card"><div class="card-header">Recent QSOs</div>
-          <div class="table-responsive"><table class="table table-striped table-tight mb-0">${raw(qsoHead())}<tbody>${raw(qsoRows(stats.recent))}</tbody></table></div></div></div>
+          <div class="table-responsive"><table class="table table-striped table-tight mb-0">${raw(qsoHead(COLUMNS))}<tbody>${raw(qsoRows(stats.recent, COLUMNS))}</tbody></table></div></div></div>
         <div class="col-lg-3"><div class="card"><div class="card-header">Incoming ADIF</div><div class="card-body small">
           ${raw(adif.enabled ? html`
             <div>TCP ${adif.tcp.listening ? html`<span class="text-success">listening on ${adif.bind}:${adif.tcp.port}</span>` : adif.tcp.error ? html`<span class="text-danger">${adif.tcp.error}</span>` : 'off'}</div>

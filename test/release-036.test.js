@@ -29,9 +29,9 @@ const EXPECTED_LINKS = {
 };
 
 // ---- version -----------------------------------------------------------------------------------------
-test('package metadata reports 0.3.7 and the product name is unchanged', () => {
+test('package metadata reports 0.4.1 and the product name is unchanged', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.strictEqual(pkg.version, '0.3.7');
+  assert.strictEqual(pkg.version, '0.4.1');
   assert.strictEqual(pkg.build.appId, 'org.cloudlog.desktop');
   assert.strictEqual(pkg.build.productName, 'Cloudlog Desktop');
 });

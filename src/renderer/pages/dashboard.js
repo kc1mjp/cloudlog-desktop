@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const { $, html, raw, api, toast, qsoRows, qsoHead, fmtFreq, currentStation } = App.util;
+  const { $, html, raw, api, toast, qsoRows, qsoHead, fmtFreq, currentStation, mcStatusLine } = App.util;
   const COLUMNS = ['country']; // Date, UTC, Call, Band, Mode, RST, Country
   let el; let timer;
 
@@ -43,6 +43,7 @@
           ${raw(adif.enabled ? html`
             <div>TCP ${adif.tcp.listening ? html`<span class="text-success">listening on ${adif.bind}:${adif.tcp.port}</span>` : adif.tcp.error ? html`<span class="text-danger">${adif.tcp.error}</span>` : 'off'}</div>
             <div>UDP ${adif.udp.listening ? html`<span class="text-success">listening on ${adif.bind}:${adif.udp.port}</span>` : adif.udp.error ? html`<span class="text-danger">${adif.udp.error}</span>` : 'off'}</div>
+            ${raw(mcStatusLine(adif.multicast))}
             <div class="text-muted mt-1">${adif.received} received this session</div>` : 'Socket is off')}
         </div></div></div>
       </div>`;

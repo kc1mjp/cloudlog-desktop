@@ -14,6 +14,7 @@ body { min-height: 100vh; }
 .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .7rem; border-radius: 1rem; background: rgba(255, 255, 255, .16); white-space: nowrap; user-select: none; }
 .chip:hover { background: rgba(255, 255, 255, .28); }
 .dot { width: .6rem; height: .6rem; border-radius: 50%; display: inline-block; background: #adb5bd; }
+.mc-amber { color: #ffc107; font-weight: 600; } /* same amber as .dot.warn (Offline mode) */
 .dot.ok { background: #5cf08a; } .dot.warn { background: #ffc107; } .dot.bad { background: #ff6b6b; }
 .toast-stack { position: fixed; right: 1rem; bottom: 1rem; z-index: 2000; display: flex; flex-direction: column; gap: .5rem; max-width: 26rem; }
 .toast-stack .alert { margin: 0; box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .25); }

@@ -63,13 +63,13 @@ const assertNoSecrets = (v) => {
 };
 
 // ---- versioning -----------------------------------------------------------------------------------
-test('version metadata reports 0.3.7', () => {
+test('version metadata reports 0.4.1', () => {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(pkg.version, '0.3.7');
-  assert.strictEqual(lock.version, '0.3.7');
-  assert.strictEqual(lock.packages[''].version, '0.3.7');
-  assert.match(read('README.md'), /^### 0\.3\.7$/m);
+  assert.strictEqual(pkg.version, '0.4.1');
+  assert.strictEqual(lock.version, '0.4.1');
+  assert.strictEqual(lock.packages[''].version, '0.4.1');
+  assert.match(read('README.md'), /^### 0\.4\.1$/m);
 });
 
 // ---- callsigns and profile links ------------------------------------------------------------------

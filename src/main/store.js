@@ -66,7 +66,7 @@ const SETTINGS_DEFAULTS = {
   sync: { auto: true, intervalSec: 20, paused: false, instant: true },
   rigs: [],
   activeRigId: null,
-  adifServer: { enabled: true, bind: '127.0.0.1', tcp: true, tcpPort: 2333, udp: true, udpPort: 2333 },
+  adifServer: { enabled: true, bind: '127.0.0.1', tcp: true, tcpPort: 2333, udp: true, udpPort: 2333, multicast: { enabled: false, address: '224.0.0.1', port: 2237, interface: 'loopback' } },
   quick: { myType: 'POTA', myRef: '', theirType: 'POTA', role: 'activator' },
   contest: { id: 'CQ-WW-SSB', customId: '', sentExchange: '', serial: 1, startedAt: 0 },
   callbook: CALLBOOK_DEFAULTS,

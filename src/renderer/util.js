@@ -195,4 +195,17 @@ function cleanupStrayModalArtifacts() {
   document.body.style.removeProperty('padding-right');
 }
 
-App.util = { $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, TimeFields, followRig, stateIcon, qsoRows, qsoHead, currentStation, requireLogbook, DIGITAL };
+
+// ---- WSJT-X / JTDX multicast status line ------------------------------------------------------
+// state: error = red, waiting (no heartbeat yet / none for 2 minutes) = amber (same amber as the Offline mode chip), active = green.
+const MC_STATE_CLASS = { error: 'text-danger', waiting: 'mc-amber', active: 'text-success' };
+const MC_STATE_HINT = { error: 'Multicast listener error', waiting: 'Waiting for a WSJT-X/JTDX heartbeat', active: 'Receiving WSJT-X/JTDX heartbeats' };
+/** HTML for the `MC listening on {ip}:{port}` status line (plus the error text when there is one). */
+function mcStatusLine(mc) {
+  if (!mc || !mc.enabled || mc.state === 'off') return html`<div>MC <span class="text-muted">off</span></div>`;
+  const state = MC_STATE_CLASS[mc.state] ? mc.state : 'error';
+  const err = state === 'error' && mc.error ? html`<div class="text-danger" role="alert">${mc.error}</div>` : '';
+  return html`<div>MC <span class="${MC_STATE_CLASS[state]}" title="${MC_STATE_HINT[state]}">listening on ${mc.address}:${mc.port}</span></div>${raw(err)}`;
+}
+
+App.util = { mcStatusLine, MC_STATE_CLASS, $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, TimeFields, followRig, stateIcon, qsoRows, qsoHead, currentStation, requireLogbook, DIGITAL };

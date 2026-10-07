@@ -40,6 +40,10 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 
 ## Changelog
 
+### 0.4.1
+- Incoming ADIF can now receive WSJT-X and JTDX by IP multicast. Settings > Incoming ADIF has a new "WSJT-X / JTDX multicast" section with an on/off switch, the multicast address (default `224.0.0.1`), the port (default `2237`) and the network interface (default "This computer only"). Multicast switch is off until you turn it on.
+- Note: Linux often ships with multicast switched off on the loopback interface (`lo`). In that case "This computer only" cannot work: the listener is not started, the status turns red with the reason, and nothing falls back to another interface. Either run `sudo ip link set lo multicast on` or pick another interface (for example your Ethernet or Wi-Fi interface).
+
 ### 0.3.7
 - Dashboard: the Recent QSOs table no longer has a Station column, and its Notes column is replaced by Country.
 - Logbook: Station is replaced by Grid (the contact's grid square) and Notes is replaced by Country. A contact with no grid or country simply shows an empty cell.

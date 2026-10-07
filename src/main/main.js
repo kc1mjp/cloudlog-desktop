@@ -10,6 +10,7 @@ const { CloudlogClient, CloudlogError } = require('./cloudlog');
 const { LogService } = require('./logbook');
 const { RigManager } = require('./rig');
 const { AdifServer } = require('./adifserver');
+const { discoverInterfaces } = require('./multicast');
 const { CONTESTS, contestById, dupeMatcher } = require('./contests');
 const { BAND_NAMES, MODES } = require('./bands');
 const { CallbookService } = require('./callbook');
@@ -300,6 +301,7 @@ const api = {
   },
 
   'adif:status': () => adif.status(),
+  'adif:interfaces': () => discoverInterfaces(), // active multicast-capable interfaces + "This computer only"
 
   'contest:dupe': ({ contestId, call, band, mode, since }) => {
     const c = contestById(contestId);

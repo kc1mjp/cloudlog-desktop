@@ -375,6 +375,7 @@
   // ---- ADIF -----------------------------------------------------------------------------
   function drawAdif() {
     const a = App.state.settings.adifServer;
+    const mc = { enabled: false, address: '224.0.0.1', port: 2237, interface: 'loopback', ...(a.multicast || {}) };
     $('#tab-body').innerHTML = html`
     <div class="row g-3"><div class="col-lg-7"><div class="card"><div class="card-header">Receive QSOs from other programs</div><div class="card-body">
       <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="a-on" ${check(a.enabled)}><label class="form-check-label" for="a-on">Log QSOs sent to this app as ADIF</label></div>
@@ -385,15 +386,62 @@
         <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" id="a-tcp" ${check(a.tcp)}><label class="form-check-label" for="a-tcp">TCP port</label></div><input id="a-tcpp" type="number" class="form-control" value="${a.tcpPort}"></div>
         <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" id="a-udp" ${check(a.udp)}><label class="form-check-label" for="a-udp">UDP port</label></div><input id="a-udpp" type="number" class="form-control" value="${a.udpPort}"></div>
       </div>
+      <hr>
+      <h6 class="mb-2">WSJT-X / JTDX multicast</h6>
+      <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="a-mc-on" ${check(mc.enabled)}><label class="form-check-label" for="a-mc-on">Receive ADIF from WSJT-X / JTDX by multicast</label></div>
+      <div class="row g-3 mb-2">
+        <div class="col-md-5"><label class="form-label" for="a-mc-addr">Multicast address</label><input id="a-mc-addr" type="text" class="form-control mono" value="${mc.address}" placeholder="224.0.0.1"></div>
+        <div class="col-md-3"><label class="form-label" for="a-mc-port">Port</label><input id="a-mc-port" type="number" min="1" max="65535" class="form-control" value="${mc.port}"></div>
+        <div class="col-md-12"><label class="form-label" for="a-mc-if">Network interface</label>
+          <div class="input-group"><select id="a-mc-if" class="form-select"><option value="${mc.interface}" selected>${mc.interface === 'loopback' ? 'This computer only' : mc.interface}</option></select><button class="btn btn-outline-secondary" type="button" id="a-mc-refresh" title="Rescan network interfaces"><i class="fas fa-rotate"></i></button></div>
+          <div id="a-mc-warn" class="form-text text-danger" role="alert"></div></div>
+      </div>
       <button class="btn btn-primary" id="a-save">Save</button>
     </div></div></div>
     <div class="col-lg-5"><div class="card mb-3"><div class="card-header">Status</div><div class="card-body small" id="adif-status"></div></div>
       <div class="card"><div class="card-header">How to connect</div><div class="card-body small">
         <p class="mb-2"><b>WSJT-X / JTDX:</b> Settings → Reporting → UDP Server, use this computer's address and the UDP port. Logged QSOs arrive as soon as you confirm them.</p>
+        <p class="mb-2"><b>WSJT-X / JTDX by multicast:</b> in WSJT-X/JTDX set Reporting → UDP Server to the multicast address (for example 224.0.0.1) and port 2237, then turn on the multicast switch here. The status line goes green once a heartbeat arrives.</p>
         <p class="mb-2"><b>Anything else:</b> send ADIF records ending in <code>&lt;EOR&gt;</code> to the TCP or UDP port, for example <code>nc 127.0.0.1 ${a.tcpPort} &lt; log.adi</code>.</p>
         <p class="mb-0 text-muted">Duplicates that arrive twice within the same minute are ignored.</p></div></div></div></div>`;
-    $('#a-save').addEventListener('click', () => save({ adifServer: { enabled: $('#a-on').checked, bind: $('#a-bind').value, tcp: $('#a-tcp').checked, tcpPort: num($('#a-tcpp').value, 2333), udp: $('#a-udp').checked, udpPort: num($('#a-udpp').value, 2333) } }));
+    $('#a-save').addEventListener('click', () => {
+      const mcAddr = $('#a-mc-addr').value.trim();
+      const mcPort = num($('#a-mc-port').value, NaN);
+      const octets = mcAddr.split('.');
+      const validAddr = octets.length === 4 && octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255) && Number(octets[0]) >= 224 && Number(octets[0]) <= 239;
+      if (!validAddr) { toast('Multicast address must be an IPv4 multicast address (224.0.0.0 - 239.255.255.255).', 'danger'); return; }
+      if (!Number.isInteger(mcPort) || mcPort < 1 || mcPort > 65535) { toast('Multicast port must be between 1 and 65535.', 'danger'); return; }
+      save({ adifServer: { enabled: $('#a-on').checked, bind: $('#a-bind').value, tcp: $('#a-tcp').checked, tcpPort: num($('#a-tcpp').value, 2333), udp: $('#a-udp').checked, udpPort: num($('#a-udpp').value, 2333),
+        multicast: { enabled: $('#a-mc-on').checked, address: mcAddr, port: mcPort, interface: $('#a-mc-if').value || 'loopback' } } });
+    });
+    $('#a-mc-refresh').addEventListener('click', () => loadMcInterfaces());
+    $('#a-mc-if').addEventListener('change', () => showMcIfaceWarning());
+    loadMcInterfaces();
     drawAdifStatus();
+  }
+
+  let mcIfaces = [];
+  async function loadMcInterfaces() {
+    let list;
+    try { list = await api('adif:interfaces'); } catch (e) { list = null; }
+    const sel = $('#a-mc-if');
+    if (!sel || tab !== 'adif') return; // left the tab while loading
+    const saved = (App.state.settings.adifServer.multicast || {}).interface || 'loopback';
+    const current = sel.value || saved;
+    mcIfaces = Array.isArray(list) ? list : [];
+    const known = mcIfaces.some((i) => i.id === current);
+    const opts = mcIfaces.map((i) => html`<option value="${i.id}" ${i.id === current ? 'selected' : ''}>${i.label}</option>`);
+    if (!known) opts.push(html`<option value="${current}" selected>${current} (not available)</option>`);
+    sel.innerHTML = opts.join('');
+    showMcIfaceWarning();
+  }
+
+  function showMcIfaceWarning() {
+    const sel = $('#a-mc-if'); const box = $('#a-mc-warn');
+    if (!sel || !box) return;
+    const i = mcIfaces.find((x) => x.id === sel.value);
+    box.textContent = !i ? (mcIfaces.length ? `Interface "${sel.value}" is not active or not multicast-capable. Choose another interface.` : '')
+      : (i.usable ? '' : i.reason || 'This interface cannot be used for multicast.');
   }
 
   function drawAdifStatus() {
@@ -401,7 +449,7 @@
     if (!box) return;
     const s = App.state.adif;
     const line = (n, x) => html`<div>${n}: ${raw(x.listening ? html`<span class="text-success">listening on ${s.bind}:${x.port}</span>` : x.error ? html`<span class="text-danger">${x.error}</span>` : '<span class="text-muted">off</span>')}</div>`;
-    box.innerHTML = s.enabled ? html`${raw(line('TCP', s.tcp))}${raw(line('UDP', s.udp))}<div class="mt-2 text-muted">${s.received} QSO(s) received this session</div>` : '<span class="text-muted">The socket is off.</span>';
+    box.innerHTML = s.enabled ? html`${raw(line('TCP', s.tcp))}${raw(line('UDP', s.udp))}${raw(App.util.mcStatusLine(s.multicast))}<div class="mt-2 text-muted">${s.received} QSO(s) received this session</div>` : '<span class="text-muted">The socket is off.</span>';
   }
 
   // ---- Appearance / About ---------------------------------------------------------------

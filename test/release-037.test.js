@@ -340,10 +340,8 @@ test('Logbook layout: the fill-viewport mode is on while the Logbook is open and
 });
 
 // ---- release plumbing -------------------------------------------------------------------------------------
-test('release 0.3.7: the new test file is part of npm test, and versions are bumped', () => {
+test('release 0.3.7: the new test file is part of npm test, and the 0.3.7 notes are kept', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.strictEqual(pkg.version, '0.3.7');
   assert.ok(pkg.scripts.test.includes('test/release-037.test.js'));
-  assert.strictEqual(JSON.parse(read('package-lock.json')).version, '0.3.7');
   assert.match(read('README.md'), /^### 0\.3\.7$/m);
 });

@@ -3,6 +3,7 @@ const net = require('net');
 const dgram = require('dgram');
 const EventEmitter = require('events');
 const { parseAdif } = require('./adif');
+const { MulticastListener, mcConfig, discoverInterfaces } = require('./multicast');
 
 const WSJTX_MAGIC = 0xadbccbda;
 const MAX_TCP_BUFFER = 8 * 1024 * 1024;
@@ -35,6 +36,10 @@ class AdifServer extends EventEmitter {
     this.errors = { tcp: '', udp: '' };
     this.received = 0;
     this.clients = new Set();
+    // WSJT-X / JTDX multicast: ADIF it receives goes through the same _deliver() path as TCP and UDP.
+    this.mc = new MulticastListener({ discover: () => discoverInterfaces() });
+    this.mc.on('adif', (text) => this._deliver(text, 'WSJT-X multicast'));
+    this.mc.on('status', () => this.emit('status', this.status()));
   }
 
   status() {
@@ -44,8 +49,16 @@ class AdifServer extends EventEmitter {
       tcp: { listening: !!this.tcp, port: c.tcpPort, error: this.errors.tcp, clients: this.clients.size },
       udp: { listening: !!this.udp, port: c.udpPort, error: this.errors.udp },
       bind: c.bind,
+      multicast: this._mcStatus(c),
       received: this.received,
     };
+  }
+
+  _mcStatus(c) {
+    const m = mcConfig(c);
+    const on = !!c.enabled && m.enabled;
+    const live = on ? this.mc.status() : {};
+    return { ...live, enabled: on, state: on ? live.state : 'off', address: m.address, port: m.port, interface: m.interface, error: on ? live.error || '' : '' };
   }
 
   _deliver(binaryText, source) {
@@ -64,6 +77,8 @@ class AdifServer extends EventEmitter {
     if (c.enabled) {
       if (c.tcp) await this._startTcp(c);
       if (c.udp) await this._startUdp(c);
+      const m = mcConfig(c);
+      if (m.enabled) await this.mc.start(m); // never throws; failures show up as status.multicast.error
     }
     this.emit('status', this.status());
   }
@@ -130,6 +145,7 @@ class AdifServer extends EventEmitter {
     const tasks = [];
     if (this.tcp) { const t = this.tcp; this.tcp = null; tasks.push(new Promise((r) => t.close(r))); }
     if (this.udp) { const u = this.udp; this.udp = null; tasks.push(new Promise((r) => u.close(r))); }
+    tasks.push(this.mc.stop());
     await Promise.all(tasks);
   }
 }

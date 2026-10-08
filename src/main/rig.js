@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const EventEmitter = require('events');
+const { FlrigXmlRpcServer, Mutex, xmlrpcConfig, validateXmlrpcSharing } = require('./flrigxml');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,10 +78,14 @@ function parseRigList(text) {
  * one. An optional relay re-publishes the same rig on a TCP port for other apps.
  */
 class RigService extends EventEmitter {
-  constructor({ getSettings, resourcesPath }) {
+  constructor({ getSettings, resourcesPath, appVersion }) {
     super();
     this.getSettings = getSettings;
     this.resourcesPath = resourcesPath;
+    this.appVersion = appVersion || '';
+    this.mutex = new Mutex();
+    this.xml = null; // flrig-compatible XML-RPC sharing listener (flrigxml.js)
+    this.xmlError = '';
     this.gen = 0;
     this.sock = null;
     this.child = null;
@@ -105,7 +110,15 @@ class RigService extends EventEmitter {
       rigName: this.rigName(),
       forceRtsActive: this.forceRtsActive,
       relay: { enabled: !!rc.enabled, listening: !!this.relay, port: rc.port, bind: rc.bind, clients: this.relayClients.size, error: this.relayError },
+      xmlrpc: this.xmlrpcStatus(),
     };
+  }
+
+  /** XML-RPC sharing listener state: independent of the radio connection state and of the Hamlib relay. */
+  xmlrpcStatus() {
+    if (this.xml) return this.xml.status();
+    const x = xmlrpcConfig(this.getSettings().rig);
+    return { enabled: x.enabled, state: this.xmlError ? 'error' : 'stopped', listening: false, port: Number(x.port), bind: x.bind, clients: 0, error: this.xmlError };
   }
 
   rigName() {
@@ -146,6 +159,7 @@ class RigService extends EventEmitter {
     if (cfg.mode === 'none') {
       this._set({ state: 'idle', message: 'CAT control is off', freqHz: null, mode: null, ptt: false });
       await this._startRelay(gen);
+      await this._startXmlrpc(gen);
       this._emitStatus();
       return;
     }
@@ -167,6 +181,7 @@ class RigService extends EventEmitter {
     if (gen !== this.gen) return;
     this._connect(gen, 0);
     await this._startRelay(gen);
+    await this._startXmlrpc(gen);
     this._emitStatus();
   }
 
@@ -178,6 +193,8 @@ class RigService extends EventEmitter {
   async _teardown() {
     clearTimeout(this.reconnectTimer);
     this._dropSocket();
+    if (this.xml) { const x = this.xml; this.xml = null; await x.stop(); }
+    this.xmlError = '';
     if (this.relay) { const r = this.relay; this.relay = null; for (const c of this.relayClients) c.destroy(); await new Promise((res) => r.close(res)); }
     if (this.child) {
       const c = this.child;
@@ -347,6 +364,47 @@ class RigService extends EventEmitter {
     if (!/^RPRT 0/.test(r[0])) throw new Error(`Radio refused mode change (${r[0]})`);
   }
 
+  // ---- shared radio access for the XML-RPC server -----------------------------
+
+  /** One rigctl command over the app's single rigctld connection (FIFO-ordered with the poll loop and the UI). */
+  cat(cmd, expected = 1) { return this._send(cmd, expected); }
+
+  /** Runs fn with no other XML-RPC operation interleaved (the CAT commands inside still queue behind the poll loop). */
+  exclusive(fn) { return this.mutex.run(fn); }
+
+  /** Folds a just-confirmed frequency/mode into the shared state so readers do not see a stale poll value. */
+  noteState(patch) { this._set(patch); }
+
+  async setPtt(on) {
+    const r = await this._send(`T ${on ? 1 : 0}`);
+    if (!/^RPRT 0/.test(r[0])) throw new Error(`Radio refused PTT change (${r[0]})`);
+    if (!this.noPtt) {
+      const t = await this._send('t');
+      if (!/^RPRT/.test(t[0]) && (t[0].trim() === '1') !== !!on) throw new Error('Radio did not confirm the PTT change');
+    }
+    this._set({ ptt: !!on, updated: Date.now() });
+  }
+
+  async _startXmlrpc(gen) {
+    const s = this.getSettings();
+    const x = xmlrpcConfig(s.rig);
+    this.xmlError = '';
+    if (!x.enabled || gen !== this.gen) return;
+    if (s.rig.mode === 'none') { this.xmlError = 'Set up CAT control first'; return; }
+    const problem = validateXmlrpcSharing(s.all, s.rig);
+    if (problem) { this.xmlError = problem; return; }
+    const srv = new FlrigXmlRpcServer({
+      getConfig: () => xmlrpcConfig(this.getSettings().rig),
+      radio: this,
+      version: this.appVersion ? `${this.appVersion} (cloudlog-desktop, flrig-compatible XML-RPC)` : 'cloudlog-desktop (flrig-compatible XML-RPC)',
+    });
+    srv.on('clients', () => this._emitStatus());
+    srv.on('state', () => this._emitStatus());
+    this.xml = srv;
+    await srv.start();
+    if (gen !== this.gen) { if (this.xml === srv) this.xml = null; await srv.stop(); }
+  }
+
   // ---- relay ------------------------------------------------------------
 
   async _startRelay(gen) {
@@ -434,10 +492,11 @@ function listSerialPorts() {
  * each RigService gets a shim that hands it just its own {rig, relay}.
  */
 class RigManager extends EventEmitter {
-  constructor({ getSettings, resourcesPath }) {
+  constructor({ getSettings, resourcesPath, appVersion }) {
     super();
     this.getSettings = getSettings;
     this.resourcesPath = resourcesPath;
+    this.appVersion = appVersion;
     this.services = new Map();
     this.modelCache = null;
   }
@@ -450,8 +509,9 @@ class RigManager extends EventEmitter {
     let svc = this.services.get(id);
     if (svc) return svc;
     svc = new RigService({
-      getSettings: () => { const r = this._cfg(id); return { rig: r, relay: (r && r.relay) || {} }; },
+      getSettings: () => { const r = this._cfg(id); return { rig: r, relay: (r && r.relay) || {}, all: this.getSettings().rigs }; },
       resourcesPath: this.resourcesPath,
+      appVersion: this.appVersion,
     });
     svc.on('status', (s) => this.emit('status', id, s));
     svc.on('update', (s) => this.emit('update', id, s));
@@ -495,7 +555,7 @@ class RigManager extends EventEmitter {
     if (svc) base = svc.status();
     else {
       const message = !cfg.enabled ? 'Turned off' : cfg.mode === 'none' ? 'No connection method set up' : 'Starting…';
-      base = { state: 'idle', message, freqHz: null, mode: null, ptt: false, forceRtsActive: false, rigName: cfg.label || cfg.name || 'Radio', relay: { enabled: !!cfg.relay?.enabled, listening: false, port: cfg.relay?.port, bind: cfg.relay?.bind, clients: 0, error: '' } };
+      base = { state: 'idle', message, freqHz: null, mode: null, ptt: false, forceRtsActive: false, rigName: cfg.label || cfg.name || 'Radio', relay: { enabled: !!cfg.relay?.enabled, listening: false, port: cfg.relay?.port, bind: cfg.relay?.bind, clients: 0, error: '' }, xmlrpc: { enabled: xmlrpcConfig(cfg).enabled, state: 'stopped', listening: false, port: Number(xmlrpcConfig(cfg).port), bind: xmlrpcConfig(cfg).bind, clients: 0, error: '' } };
     }
     return { id, label: cfg.label || base.rigName, enabled: !!cfg.enabled, activeOnStartup: !!cfg.activeOnStartup, updateCloudlog: !!cfg.updateCloudlog, ...base };
   }

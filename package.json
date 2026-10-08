@@ -1,13 +1,13 @@
 {
   "name": "cloudlog-desktop",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Desktop logging client for Cloudlog with offline logging, contest/quick logging, Hamlib CAT and an ADIF socket",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/copy-vendor.js",
     "rebuild:electron": "electron-builder install-app-deps",
-    "test": "node --test test/core.test.js test/rig-adif.test.js test/local-edit.test.js test/qso-cache.test.js test/callbook.test.js test/enter-logging.test.js test/release-036.test.js test/release-037.test.js test/release-041.test.js",
+    "test": "node --test test/core.test.js test/rig-adif.test.js test/local-edit.test.js test/qso-cache.test.js test/callbook.test.js test/enter-logging.test.js test/release-036.test.js test/release-037.test.js test/release-041.test.js test/release-042.test.js",
     "dev:reset-cache": "node scripts/reset-qso-cache.js",
     "dist": "electron-builder install-app-deps && electron-builder --linux AppImage deb",
     "dist:appimage": "electron-builder install-app-deps && electron-builder --linux AppImage",

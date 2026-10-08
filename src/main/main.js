@@ -9,6 +9,7 @@ const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs } = require
 const { CloudlogClient, CloudlogError } = require('./cloudlog');
 const { LogService } = require('./logbook');
 const { RigManager } = require('./rig');
+const { validateXmlrpcSharing } = require('./flrigxml');
 const { AdifServer } = require('./adifserver');
 const { discoverInterfaces } = require('./multicast');
 const { CONTESTS, contestById, dupeMatcher } = require('./contests');
@@ -269,6 +270,8 @@ const api = {
   'rig:setMode': (id, m) => { const s = rigs.services.get(id); if (!s) throw new Error('That radio is not running'); return s.setMode(m); },
   'rig:add': async (patch) => {
     const r = newRig(genRigId(), { label: `Radio ${settings.data.rigs.length + 1}`, ...patch });
+    const bad = validateXmlrpcSharing(settings.data.rigs, r);
+    if (bad) throw new Error(bad);
     settings.data.rigs.push(r);
     if (!settings.data.activeRigId) settings.data.activeRigId = r.id;
     await saveRigsAndApply([r.id]);
@@ -277,6 +280,9 @@ const api = {
   'rig:update': async (id, patch) => {
     const r = settings.data.rigs.find((x) => x.id === id);
     if (!r) throw new Error('Unknown radio');
+    // Check the merged XML-RPC sharing config (port range, clashes with other listeners) before anything is saved or restarted.
+    const bad = validateXmlrpcSharing(settings.data.rigs, deepMerge(JSON.parse(JSON.stringify(r)), patch));
+    if (bad) throw new Error(bad);
     deepMerge(r, patch);
     await saveRigsAndApply([id]);
     return rigStatusPayload();
@@ -345,7 +351,7 @@ app.whenReady().then(async () => {
   settings.saveNow();
   client = new CloudlogClient(() => settings.data.cloudlog);
   log = new LogService({ dir, client, getSettings: () => settings.data });
-  rigs = new RigManager({ getSettings: () => settings.data, resourcesPath: process.resourcesPath });
+  rigs = new RigManager({ getSettings: () => settings.data, resourcesPath: process.resourcesPath, appVersion: app.getVersion() });
   adif = new AdifServer({ getSettings: () => settings.data });
 
   const refreshTray = createTray();

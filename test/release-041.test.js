@@ -412,11 +412,8 @@ test('dashboard and settings both render the multicast line from the shared stat
 });
 
 // ---- release plumbing ---------------------------------------------------------------------------------------
-test('release 0.4.1: versions are bumped, README has release notes, and this file is part of npm test', () => {
+test('release 0.4.1: README keeps the release notes, and this file is part of npm test', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.strictEqual(pkg.version, '0.4.1');
   assert.ok(pkg.scripts.test.includes('test/release-041.test.js'));
-  const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(lock.version, '0.4.1'); assert.strictEqual(lock.packages[''].version, '0.4.1');
   assert.match(read('README.md'), /^### 0\.4\.1$/m);
 });

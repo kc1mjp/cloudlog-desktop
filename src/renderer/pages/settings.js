@@ -217,6 +217,7 @@
   function drawRadioForm() {
     const r = App.state.settings.rigs.find((x) => x.id === editingRigId);
     if (!r) return;
+    const xr = { enabled: false, bind: '127.0.0.1', port: 12345, ...(r.xmlrpc || {}) }; // radios saved before 0.4.2 have none
     const activeId = App.state.settings.activeRigId;
     const info = App.state.info.hamlib;
     const bauds = [1200, 4800, 9600, 19200, 38400, 57600, 115200];
@@ -275,6 +276,12 @@
           <div class="col-md-6"><label class="form-label" for="rl-port">Port</label><input id="rl-port" type="number" class="form-control" value="${r.relay.port}"></div></div>
         <div class="form-text">Point WSJT-X, fldigi and similar programs at Hamlib "NET rigctl" with this address. Each radio needs its own port. Opening it to the network lets anyone on it control your radio.</div>
       </div></div>
+      <div class="card mt-3"><div class="card-header">Share this radio (flrig XML-RPC port)</div><div class="card-body">
+        <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="xr-on" ${check(xr.enabled)}><label class="form-check-label" for="xr-on">Let fldigi and other flrig-compatible programs use this radio through an XML-RPC port</label></div>
+        <div class="row g-3"><div class="col-md-6"><label class="form-label" for="xr-bind">Listen on</label><select id="xr-bind" class="form-select"><option value="127.0.0.1" ${xr.bind === '127.0.0.1' ? 'selected' : ''}>This computer only</option><option value="0.0.0.0" ${xr.bind === '0.0.0.0' ? 'selected' : ''}>All network interfaces</option></select></div>
+          <div class="col-md-6"><label class="form-label" for="xr-port">Port</label><input id="xr-port" type="number" class="form-control" value="${xr.port}"></div></div>
+        <div class="form-text">In fldigi choose Rig Control &gt; flrig and use this address and port (flrig's own default is 12345). It works on its own or together with the Hamlib port above, and uses this radio's existing connection. Each radio needs its own port. Opening it to the network lets anyone on it control your radio, including transmit.</div>
+      </div></div>
       <button class="btn btn-primary mt-3" id="r-save"><i class="fas fa-plug me-1"></i>Save and connect</button>
     </div>
     <div class="col-lg-5">
@@ -315,6 +322,7 @@
           rigctldPath: $('#r-bin').value.trim(), forceRts: $('#r-forcerts').checked, host: $('#r-host').value.trim() || '127.0.0.1', port: num($('#r-port').value, 4532),
           name: $('#r-name').value.trim(), updateCloudlog: $('#r-upd').checked,
           relay: { enabled: $('#rl-on').checked, bind: $('#rl-bind').value, port },
+          xmlrpc: { enabled: $('#xr-on').checked, bind: $('#xr-bind').value, port: num($('#xr-port').value, 12345) },
         });
         if (wasActive) await api('rig:setActive', r.id);
         App.state.settings = await api('settings:get');
@@ -358,7 +366,9 @@
       ${raw(s.message ? html`<div class="small ${s.state === 'error' ? 'text-danger' : 'text-muted'}">${s.message}</div>` : '')}
       ${raw(s.forceRtsActive ? '<div class="small text-info mt-1"><i class="fas fa-shield-halved me-1"></i>Force RTS active on this connection</div>' : '')}
       <hr><div class="small"><div class="fw-bold mb-1">Shared Hamlib port</div>
-      ${raw(!s.relay.enabled ? '<span class="text-muted">Not shared</span>' : s.relay.listening ? html`<span class="text-success">Listening on ${s.relay.bind}:${s.relay.port}</span> · ${s.relay.clients} connected` : html`<span class="text-danger">${s.relay.error || 'Not listening'}</span>`)}</div>`;
+      ${raw(!s.relay.enabled ? '<span class="text-muted">Not shared</span>' : s.relay.listening ? html`<span class="text-success">Listening on ${s.relay.bind}:${s.relay.port}</span> · ${s.relay.clients} connected` : html`<span class="text-danger">${s.relay.error || 'Not listening'}</span>`)}</div>
+      ${raw(s.xmlrpc && s.xmlrpc.enabled ? html`<div class="small mt-3"><div class="fw-bold mb-1">Shared XmlRPC port</div>
+      ${raw(s.xmlrpc.listening ? html`<span class="text-success">Listening on ${s.xmlrpc.bind}:${s.xmlrpc.port}</span> · ${s.xmlrpc.clients} connected` : s.xmlrpc.state === 'starting' ? '<span class="text-muted">Starting…</span>' : html`<span class="text-danger">${s.xmlrpc.error || 'Not listening'}</span>`)}</div>` : '')}`;
   }
 
   function drawAllRigs() {

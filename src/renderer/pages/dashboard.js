@@ -33,6 +33,7 @@
             : rigs.length ? html`<div class="text-muted">${rig ? rig.message : 'No active radio selected'}</div><a href="#/settings?tab=radio" class="btn btn-sm btn-outline-primary mt-2">Radio settings</a>`
             : html`<div class="text-muted">No radio set up</div><a href="#/settings?tab=radio" class="btn btn-sm btn-outline-primary mt-2">Add a radio</a>`)}
           ${raw(rig && rig.relay.listening ? html`<div class="small text-muted mt-2">Hamlib port ${rig.relay.port} open, ${rig.relay.clients} client(s)</div>` : '')}
+          ${raw(rig && rig.xmlrpc && rig.xmlrpc.enabled && rig.xmlrpc.listening ? html`<div class="small text-muted ${rig.relay.listening ? '' : 'mt-2'}">XmlRPC port ${rig.xmlrpc.port} open, ${rig.xmlrpc.clients} client(s)</div>` : '')}
           ${raw(rigs.length > 1 ? html`<div class="small text-muted mt-2">${rigs.filter((r) => r.state === 'connected').length} of ${rigs.length} radios connected</div>` : '')}
           </div></div></div>
       </div>

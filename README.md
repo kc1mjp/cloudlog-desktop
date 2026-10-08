@@ -12,7 +12,7 @@ An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/C
 | View logbooks | Downloads a logbook with `api/get_contacts_adif` (delta updates), search and filter, paging. Pending local QSOs appear immediately. |
 | Current logbook | Logbooks are your Cloudlog station profiles. Chosen on the Logbooks page; every page logs to it. The list is cached for offline use. |
 | Incoming ADIF | TCP and UDP listener (default port 2333). Accepts plain ADIF and the WSJT-X / JTDX UDP "Logged ADIF" message. |
-| CAT (Hamlib) | Serial/USB radios (starts `rigctld` for you), network `rigctld`, and a rigctl-compatible port that other programs (WSJT-X, fldigi...) can use. Live frequency/mode/PTT status in the header; frequency and mode are sent to Cloudlog's radio API. |
+| CAT (Hamlib) | Serial/USB radios (starts `rigctld` for you), network `rigctld`, a rigctl-compatible port that other programs (WSJT-X, fldigi...) can use, and an optional flrig-compatible XML-RPC port for fldigi and other FL-suite programs. Live frequency/mode/PTT status in the header; frequency and mode are sent to Cloudlog's radio API. |
 | Look | Bootswatch Cerulean by default (close to Cloudlog's default look), plus dark themes. |
 
 ## Install
@@ -36,9 +36,18 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 - API endpoints used: `api/auth`, `api/station_info`, `api/qso`, `api/radio`, `api/get_contacts_adif`. Logbook download needs a server version that has the last one.
 - Data lives in `~/.config/cloudlog-desktop`: `settings.json` (settings, API key - stored there in plain text) and `qsocache.sqlite3` (the local QSO cache - your queued/local QSOs and each logbook's downloaded copy, scoped per logbook so switching or clearing one never touches another). Deleting the sqlite file (with the app closed) is equivalent to a full reset of every logbook's local cache; a developer-only `npm run dev:reset-cache` script does the same with a confirmation prompt.
 - Settings > Logbooks has a "Clear local cache" button per logbook: it clears that logbook's already-synced/downloaded QSOs (forcing a fresh download next time) without touching any other logbook or any QSO still waiting to upload.
-- Opening the ADIF socket or the Hamlib port to "all interfaces" exposes them to your network; the default is this computer only.
+- Opening the ADIF socket, the Hamlib port or the XML-RPC port to "all interfaces" exposes them to your network; the default is this computer only. The XML-RPC port can key your transmitter (PTT) for anyone who can reach it.
+
+## Sharing a radio with fldigi (flrig-compatible XML-RPC)
+
+Settings > Radio (CAT) > "Share this radio (flrig XML-RPC port)" starts an flrig-compatible XML-RPC server for that radio (off by default, port 12345, this computer only). In fldigi choose Rig Control > flrig and enter the address and port. It uses the radio connection the app already has (no second serial/USB/network connection to the radio), runs independently of the Hamlib port, and both can be on at once for the same radio. Each radio needs its own XML-RPC port; saving a port that clashes with another radio's XML-RPC or Hamlib port, or with the radio's own connection, is refused. If the port cannot be opened (for example it is already in use), Settings shows the reason in red, the Dashboard shows no "open" line, and the radio connection and Hamlib port keep working. Changing the sharing settings reconnects that radio, like changing the Hamlib port does.
 
 ## Changelog
+
+### 0.4.2
+- New: flrig-compatible XML-RPC radio sharing, so fldigi and other FL-suite programs can use a radio managed by Cloudlog Desktop. Per radio, in Settings > Radio (CAT): an on/off switch (off by default), "Listen on" (default: this computer only) and a port (default 12345). It is independent of the Hamlib port: either, or both together, can share the same radio, and neither opens another connection to the radio. See "Sharing a radio with fldigi" above for the supported methods, error behaviour and limitations.
+- Settings > Radio (CAT) > "This radio's CAT status" shows "Shared XmlRPC port" directly below "Shared Hamlib port" when XML-RPC sharing is on (also when Hamlib sharing is off): listening address and port with the number of clients, "Starting…", or the reason it could not open the port.
+- Settings files from earlier versions keep working; XML-RPC sharing is off until you turn it on.
 
 ### 0.4.1
 - Incoming ADIF can now receive WSJT-X and JTDX by IP multicast. Settings > Incoming ADIF has a new "WSJT-X / JTDX multicast" section with an on/off switch, the multicast address (default `224.0.0.1`), the port (default `2237`) and the network interface (default "This computer only"). Multicast switch is off until you turn it on.

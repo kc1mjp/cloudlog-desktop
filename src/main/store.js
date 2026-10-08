@@ -56,6 +56,7 @@ function newRig(id, patch = {}) {
     defaultFreqMhz: '14.225', defaultMode: 'USB', // used only for the Hamlib dummy rig (model 1)
     host: '127.0.0.1', port: 4532, pollMs: 500, name: '', rigctldPath: '', updateCloudlog: true,
     relay: { enabled: false, bind: '127.0.0.1', port: 4532 },
+    xmlrpc: { enabled: false, bind: '127.0.0.1', port: 12345 }, // flrig-compatible XML-RPC sharing (independent of `relay`)
     ...patch,
   };
 }
@@ -85,6 +86,8 @@ function migrateRigs(data) {
   delete data.rig;
   delete data.relay;
   if (!Array.isArray(data.rigs)) data.rigs = [];
+  // Settings written before 0.4.2 have no XML-RPC sharing block: sharing stays off until the operator turns it on.
+  for (const r of data.rigs) r.xmlrpc = { enabled: false, bind: '127.0.0.1', port: 12345, ...(r.xmlrpc && typeof r.xmlrpc === 'object' ? r.xmlrpc : {}) };
   if (!data.activeRigId || !data.rigs.some((r) => r.id === data.activeRigId)) {
     data.activeRigId = data.rigs.length ? data.rigs[0].id : null;
   }

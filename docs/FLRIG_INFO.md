@@ -1,0 +1,13 @@
+
+
+**Supported methods** (flrig names, argument and result types as in flrig's own server): `main.get_version`, `main.set_frequency`, `rig.get_xcvr`, `rig.get_vfo+`, `rig.set_vfo`, `rig.set_frequency`, `rig.get_vfoA/B`, `rig.set_vfoA/B`, `rig.get_mode`, `rig.set_mode`, `rig.get_modes`, `rig.get_modeA/B`, `rig.set_modeA/+B`, `rig.get_sideband`, `rig.get_bw`, `rig.set_bw`, `rig.get_bws`, `rig.get_ptt`, `rig.set_ptt`, `rig.set_ptt_fast`, `rig.get_AB`, `rig.set_AB`, `rig.list_met+hods`, `system.listMethods`, `system.methodHelp`, `system.methodSignature`. Frequencies are in Hz (read as a string, written as a number).
+
+**Differences from flrig and limitations**
+- Unsupported flrig methods are not listed and return XML-RPC fault -32601 (Method not found). Unsupported flrig methods: `rig.get_info`, `rig.get_update`, `ri+g.get_smeter`, `rig.get_pwrmeter`, `rig.get_swrmeter`, `rig.get_DBM`, `rig.get_Sunits`, `rig.get_power/set_power/get_maxpwr`, notch, PBT, volume, RF gain and +mic gain methods, `rig.get_split/set_split`, `rig.swap` and the A/B copy methods, `rig.get_bwA/B`, `rig.set_bwA/B`, `rig.set_verify_*`, `rig.cat_string`, `rig+.cat_priority`, `rig.cmd`, CW/FSK keyer methods (`rig.cwio_*`, `rig.fskio_text`), `rig.tune` and `rig.shutdown`. fldigi tolerates the missing meter methods.
+- Errors are real faults, not made-up values: -32001 radio not connected or not answering, -32004 the radio refused the operation, -32602 invalid argument, -32+005 timed out waiting for the radio, -32006 too many requests queued, -32700 malformed request. Unlike flrig, a disconnected radio does not return placeholder+ frequencies; only `rig.get_xcvr` returns an empty name.
+- Modes are Hamlib mode names (the list from `rig.get_modes` is generic, not read from the radio; the radio rejects ones it does not have). Bandwidth is the pa+ssband in Hz reported by Hamlib; `rig.get_bws` is a generic table (500, 1800, 2400, 2700, 3000, 6000 Hz) and `rig.set_bw` takes an index into it. The radio ro+unds to its own filters. `rig.get_sideband` is derived from the mode name (LSB, PKTLSB, ECSSLSB, CWR and RTTY are lower).
+- The `...A`/`...B` methods work on the currently active VFO only (the other VFO answers with a fault). `rig.get_AB` reports A when the radio cannot report its+ VFO.
+- PTT works only if the radio/Hamlib supports it (a Hamlib dummy rig needs PTT type RIG). A client that keys PTT and then disconnects does not un-key; the app +does not add a watchdog.
+- `main.get_version` reports the Cloudlog Desktop version, not an flrig version.
+- Verified so far against fake radios and Hamlib's dummy rig only. It has not been tested with a real fldigi or a real transceiver in this release.
+

@@ -68,9 +68,12 @@ class QrzProvider {
       name: first || clean(tag(callsign, 'name'), 60),
       qth: city && state ? `${city}, ${state}` : city,
       grid: cleanGrid(tag(callsign, 'grid')),
+      state,
+      county: clean(tag(callsign, 'county'), 60),
+      country: clean(tag(callsign, 'country'), 60),
     });
     // A non-subscriber account gets a reduced record; say so instead of silently showing nothing.
-    if (!res.name && !res.qth && !res.grid && /subscription/i.test(tag(session, 'Message'))) {
+    if (!res.name && !res.qth && !res.grid && !res.state && !res.county && !res.country && /subscription/i.test(tag(session, 'Message'))) {
       return makeResult('limited', { provider: this.id, label: this.label, call, message: 'QRZ returned limited data. Full lookups need a QRZ XML Logbook Data subscription.' });
     }
     return res;

@@ -57,7 +57,7 @@
             <div class="d-flex gap-2 align-items-center">
               <button class="btn btn-success" id="save"><i class="fas fa-plus me-1"></i>Save QSO</button>
               <button class="btn btn-outline-secondary" id="reset" type="button">Clear</button>
-              <span class="text-muted small ms-2">Press <kbd>Enter</kbd> in any field to save. Time stops updating once you start typing a callsign.</span>
+              <span class="text-muted small ms-2">Press <kbd>Enter</kbd> in any field to save. The time keeps running and is taken when you save; edit Date or Time to log a different one.</span>
             </div>
           </div>
         </div>
@@ -80,8 +80,14 @@
     f.freq.addEventListener('input', () => { const b = freqToBand(f.freq.value); if (b) f.band.value = b; });
     const CB = window.CallbookShared;
     const field = (id) => ({ get: () => $(id).value, set: (v) => { $(id).value = v; } });
+    // Which lookup fields may be pre-filled follows the "new QSO" switches in Settings > Callbook Lookup:
+    // "Add Lookup Data" covers Name and QTH here, "Add Lookup Grid" covers Grid. A switched-off field is simply not offered.
+    const enrich = (App.state.settings.callbook && App.state.settings.callbook.enrich) || { metadataOnNew: true, gridOnNew: true };
+    const offered = {};
+    if (enrich.metadataOnNew !== false) { offered.name = field('#f-name'); offered.qth = field('#f-qth'); }
+    if (enrich.gridOnNew !== false) offered.grid = field('#f-grid');
     lookup = new CB.LookupCoordinator({
-      fields: { name: field('#f-name'), qth: field('#f-qth'), grid: field('#f-grid') },
+      fields: offered,
       lookup: (call) => api('callbook:lookup', call),
       onStatus: showLookupStatus,
     });
@@ -99,7 +105,7 @@
     $('#f-call').addEventListener('input', (e) => {
       const v = e.target.value.toUpperCase().replace(/\s/g, '');
       e.target.value = v;
-      if (v) time.freeze(); else time.reset();
+      // The clock keeps running while a callsign is typed, changed or cleared: the QSO is stamped when it is saved.
       clearTimeout(wbTimer);
       wbTimer = setTimeout(() => checkWorked(v), 250);
       leftCallField = false;
@@ -142,10 +148,11 @@
       <table class="table table-sm mt-2 mb-0 mono">${raw(r.recent.slice(0, 6).map((x) => html`<tr><td>${fmtDate(x.date)}</td><td>${x.band}</td><td>${x.mode}</td></tr>`).join(''))}</table>`;
   }
 
-  // Canonical save path: the Enter key and the Save button both end up here.
-  function save() { return saver.run(doSave); }
+  // Canonical save path: the Enter key and the Save button both end up here. The moment of submission is taken here,
+  // before anything is awaited, and is the only clock reading used for this QSO's date and time.
+  function save() { const submittedAt = new Date(); return saver.run(() => doSave(submittedAt)); }
 
-  async function doSave() {
+  async function doSave(submittedAt) {
     const mounted = session;
     try {
       requireLogbook();
@@ -154,7 +161,7 @@
       const mhz = parseFloat($('#f-freq').value);
       const mode = $('#f-mode').value;
       const fields = {
-        CALL: call, ...time.values(), MODE: mode, BAND: $('#f-band').value, FREQ: mhz ? String(mhz) : '',
+        CALL: call, ...time.valuesAt(submittedAt), MODE: mode, BAND: $('#f-band').value, FREQ: mhz ? String(mhz) : '',
         RST_SENT: $('#f-rsts').value, RST_RCVD: $('#f-rstr').value, NAME: $('#f-name').value, QTH: $('#f-qth').value,
         GRIDSQUARE: $('#f-grid').value.toUpperCase(), COMMENT: $('#f-comment').value, TX_PWR: $('#f-pwr').value,
       };

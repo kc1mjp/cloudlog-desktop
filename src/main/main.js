@@ -5,17 +5,19 @@ const os = require('os');
 const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, safeStorage } = require('electron');
 
-const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs } = require('./store');
+const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs, migrateCallbook } = require('./store');
 const { CloudlogClient, CloudlogError } = require('./cloudlog');
 const { LogService } = require('./logbook');
 const { RigManager } = require('./rig');
 const { validateXmlrpcSharing } = require('./flrigxml');
 const { AdifServer } = require('./adifserver');
+const { ingestRecords, storeFormQso } = require('./ingest');
 const { discoverInterfaces } = require('./multicast');
 const { CONTESTS, contestById, dupeMatcher } = require('./contests');
 const { BAND_NAMES, MODES } = require('./bands');
 const { CallbookService } = require('./callbook');
 const callbookConfig = require('./callbook/config');
+const { CallbookEnricher } = require('./callbook/enrich');
 const { createSecretBox } = require('./secrets');
 const { profileUrl } = require('../renderer/callbook-shared');
 const { createExternalLinks } = require('./external-links');
@@ -137,6 +139,10 @@ const callbookLookup = CallbookService.create({
   fetchImpl: (...a) => fetch(...a),
 });
 
+// Fills missing contact fields from the lookup service above, under the four switches in settings.callbook.enrich.
+// Shared by every path that creates or uploads a QSO, so the merge rules exist once.
+const callbookEnricher = new CallbookEnricher({ getSettings: () => settings.data, lookup: (call) => callbookLookup.lookup(call) });
+
 /** settings.data as the renderer may see it: callbook passwords are replaced by a has-password flag. */
 function publicSettings() {
   return { ...settings.data, callbook: callbookConfig.publicConfig(settings.data.callbook) };
@@ -225,8 +231,8 @@ const api = {
     return publicSettings();
   },
 
-  'qso:add': (fields, opts = {}) => {
-    const rec = log.addQso(fields, { source: opts.source || 'manual' });
+  'qso:add': async (fields, opts = {}) => {
+    const rec = await storeFormQso(log, fields, opts.source || 'manual'); // Live QSO looks up here; Quick log and Contest do not
     return { id: rec.id, call: rec.fields.CALL };
   },
   'qso:workedBefore': (call) => log.workedBefore(call, currentStation()),
@@ -345,12 +351,13 @@ app.whenReady().then(async () => {
   const dir = app.getPath('userData');
   settings = new JsonStore(path.join(dir, 'settings.json'), SETTINGS_DEFAULTS);
   migrateRigs(settings.data);
+  migrateCallbook(settings.data);
   // Radios only auto-connect on launch if the operator opted in per-radio;
   // otherwise every radio starts turned off, however it was left last time.
   for (const r of settings.data.rigs) r.enabled = !!r.activeOnStartup;
   settings.saveNow();
   client = new CloudlogClient(() => settings.data.cloudlog);
-  log = new LogService({ dir, client, getSettings: () => settings.data });
+  log = new LogService({ dir, client, getSettings: () => settings.data, enricher: callbookEnricher });
   rigs = new RigManager({ getSettings: () => settings.data, resourcesPath: process.resourcesPath, appVersion: app.getVersion() });
   adif = new AdifServer({ getSettings: () => settings.data });
 
@@ -361,12 +368,9 @@ app.whenReady().then(async () => {
   rigs.on('status', () => send('rig', rigStatusPayload()));
   rigs.on('update', (id) => scheduleRadioPost(id));
   adif.on('status', (s) => send('adif:status', s));
-  adif.on('records', (recs, source) => {
-    const errors = [];
-    let count = 0;
-    for (const r of recs) {
-      try { if (log.addQso(r, { source, dedupe: true })) count++; } catch (e) { errors.push(`${r.CALL}: ${e.message}`); }
-    }
+  // TCP, UDP and multicast all arrive here.
+  adif.on('records', async (recs, source) => {
+    const { count, errors } = await ingestRecords(log, recs, source);
     send('adif:received', { count, source, calls: recs.map((r) => r.CALL), errors });
   });
 

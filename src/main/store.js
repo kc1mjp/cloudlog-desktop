@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { CALLBOOK_DEFAULTS } = require('./callbook/config');
+const { CALLBOOK_DEFAULTS, resolveEnrich } = require('./callbook/config');
 
 function deepMerge(target, patch) {
   for (const [k, v] of Object.entries(patch || {})) {
@@ -94,4 +94,15 @@ function migrateRigs(data) {
   return data;
 }
 
-module.exports = { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs };
+/**
+ * Settings written before 0.4.3 have no enrichment switches: they get the defaults (new-QSO lookup on, which is what
+ * Live QSO already did whenever a provider was selected; upload-time lookup off). A switch that is present but not a
+ * Boolean is reset to its default. Provider, usernames and sealed passwords are never touched.
+ */
+function migrateCallbook(data) {
+  if (!data.callbook || typeof data.callbook !== 'object') data.callbook = JSON.parse(JSON.stringify(CALLBOOK_DEFAULTS));
+  data.callbook.enrich = resolveEnrich(data.callbook.enrich);
+  return data;
+}
+
+module.exports = { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs, migrateCallbook };

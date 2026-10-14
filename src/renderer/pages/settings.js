@@ -80,6 +80,12 @@
   // field blank keeps it. Show/hide therefore only reveals what is being typed right now.
   function drawCallbook() {
     const cb = App.state.settings.callbook || { provider: 'none', qrz: {}, hamqth: {} };
+    const en = { metadataOnNew: true, metadataOnUpload: false, gridOnNew: true, gridOnUpload: false, ...(cb.enrich || {}) };
+    // One switch per line. "On a new QSO" and "On upload" are separate settings with their own explanation.
+    const NEW_TIP = 'Applies when a QSO is created or accepted: Live QSO, and contacts received over TCP, UDP or multicast. Quick log entries are not looked up when they are logged; use On upload for those.';
+    const UP_TIP = 'Applies immediately before a queued QSO is uploaded to Cloudlog, including QSOs saved earlier. What is found is also saved on the local QSO, so it is kept if the upload fails and is retried.';
+    const sw = (id, label, on, tip) => html`<div class="form-check form-switch mb-1" title="${tip}"><input class="form-check-input" type="checkbox" id="${id}" ${on ? 'checked' : ''}>
+      <label class="form-check-label" for="${id}">${label}</label></div>`;
     const group = (id, label, help) => {
       const p = cb[id] || {};
       return html`<div id="cb-${id}" class="${cb.provider === id ? '' : 'd-none'}">
@@ -98,9 +104,20 @@
           <option value="none" ${cb.provider === 'none' ? 'selected' : ''}>Disabled / No lookup</option>
           <option value="qrz" ${cb.provider === 'qrz' ? 'selected' : ''}>QRZ</option>
           <option value="hamqth" ${cb.provider === 'hamqth' ? 'selected' : ''}>HamQTH</option></select>
-        <div class="form-text">Fills Name, QTH and Grid on the Live QSO page when you enter a callsign. Nothing is looked up while offline mode is on.</div></div>
+        <div class="form-text">Fills Name, QTH and Grid on the Live QSO page when you enter a callsign (see "Add missing details to QSOs" below to choose what is filled, and where). Nothing is looked up while offline mode is on.</div></div>
       ${raw(group('qrz', 'QRZ', 'QRZ callsign lookup needs a QRZ account with an active XML Logbook Data subscription. QRZ API keys only work with its logbook API, so lookups sign in with your QRZ username and password.'))}
       ${raw(group('hamqth', 'HamQTH', 'Needs a free HamQTH account. Use the username and password you sign in to hamqth.com with.'))}
+      <hr>
+      <div class="fw-bold mb-1">Add missing details to QSOs</div>
+      <div class="form-text mb-3">Uses the lookup provider above to fill only what a QSO is missing. Anything already filled in, whether you typed it or it was received from another program, is never replaced, and a lookup that fails or finds nothing never stops a QSO from being logged or uploaded. Nothing is looked up while offline mode is on or no provider is selected.</div>
+      <div class="mb-3"><div class="fw-semibold">Add Lookup Data to QSO Log Event</div>
+        <div class="form-text mb-1">Fills a missing Name, State, County and Country. Name is the other operator's name, not yours.</div>
+        ${raw(sw('cb-meta-new', 'On a new QSO', en.metadataOnNew, NEW_TIP))}
+        ${raw(sw('cb-meta-up', 'On upload', en.metadataOnUpload, UP_TIP))}</div>
+      <div class="mb-3"><div class="fw-semibold">Add Lookup Grid if QSO Grid is Missing</div>
+        <div class="form-text mb-1">Fills a missing Gridsquare only.</div>
+        ${raw(sw('cb-grid-new', 'On a new QSO', en.gridOnNew, NEW_TIP))}
+        ${raw(sw('cb-grid-up', 'On upload', en.gridOnUpload, UP_TIP))}</div>
       <div id="cb-problem" class="small text-warning mb-2" role="status"></div>
       <div class="d-flex gap-2 align-items-center flex-wrap"><button class="btn btn-primary" id="cb-save">Save</button><button class="btn btn-outline-primary" id="cb-test">Save and test sign-in</button><span id="cb-result" class="small" role="status"></span></div>
     </div></div></div>
@@ -120,7 +137,10 @@
       });
     }
     const collect = () => {
-      const patch = { provider: sel.value };
+      const patch = {
+        provider: sel.value,
+        enrich: { metadataOnNew: $('#cb-meta-new').checked, metadataOnUpload: $('#cb-meta-up').checked, gridOnNew: $('#cb-grid-new').checked, gridOnUpload: $('#cb-grid-up').checked },
+      };
       for (const id of ['qrz', 'hamqth']) patch[id] = { username: $(`#cb-${id}-user`).value.trim(), password: $(`#cb-${id}-pass`).value };
       return patch;
     };

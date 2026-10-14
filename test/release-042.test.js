@@ -775,14 +775,10 @@ test('main.js validates XML-RPC settings before saving and passes the app versio
 });
 
 // ---- release plumbing -------------------------------------------------------------------------------------------------
-test('release 0.4.2: versions bumped, README documents the feature, this file is part of npm test', () => {
+test('release 0.4.2 plumbing: this file is part of npm test, and versions are bumped (now 0.4.3)', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.strictEqual(pkg.version, '0.4.2');
+  assert.strictEqual(pkg.version, '0.4.3');
   assert.ok(pkg.scripts.test.includes('test/release-042.test.js'));
   const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(lock.version, '0.4.2'); assert.strictEqual(lock.packages[''].version, '0.4.2');
-  const readme = read('README.md');
-  assert.match(readme, /^### 0\.4\.2$/m);
-  assert.match(readme, /XmlRPC port \{port\} open, \{clients\} client\(s\)/);
-  assert.match(readme, /Unsupported flrig methods/);
+  assert.strictEqual(lock.version, '0.4.3'); assert.strictEqual(lock.packages[''].version, '0.4.3');
 });

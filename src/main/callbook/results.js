@@ -4,9 +4,9 @@
  * Normalised lookup outcome handed to the renderer. Only these fields ever cross the IPC boundary.
  *   status: ok | not_found | limited | disabled | not_configured | offline | invalid |
  *           auth_failed | rate_limited | unavailable | error
- *   name / qth / grid: only present (non-empty) when the provider returned a value.
+ *   name / qth / grid / state / county / country: only present (non-empty) when the provider returned a value.
  */
-function makeResult(status, { provider = 'none', label = '', call = '', message, name = '', qth = '', grid = '' } = {}) {
+function makeResult(status, { provider = 'none', label = '', call = '', message, name = '', qth = '', grid = '', state = '', county = '', country = '' } = {}) {
   const messages = {
     ok: '',
     disabled: '',
@@ -23,7 +23,7 @@ function makeResult(status, { provider = 'none', label = '', call = '', message,
   return {
     status, provider, call,
     message: message !== undefined ? message : (messages[status] || ''),
-    name, qth, grid,
+    name, qth, grid, state, county, country,
   };
 }
 

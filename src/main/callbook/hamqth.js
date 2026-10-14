@@ -59,6 +59,9 @@ class HamQthProvider {
       name: clean(tag(search, 'nick'), 60) || firstWord(tag(search, 'adr_name')),
       qth: clean(tag(search, 'qth'), 80) || clean(tag(search, 'adr_city'), 80),
       grid: cleanGrid(tag(search, 'grid')),
+      state: clean(tag(search, 'us_state'), 20),
+      county: clean(tag(search, 'us_county'), 60),
+      country: clean(tag(search, 'country'), 60),
     });
   }
 

@@ -78,7 +78,15 @@ function utcNow() {
   };
 }
 
-/** Date/time inputs that follow the UTC clock until the operator edits them or a callsign is typed. */
+/** ADIF QSO_DATE / TIME_ON for one instant. Date and time come from the same Date, so UTC midnight can never split them. */
+function utcStamp(d) {
+  return {
+    QSO_DATE: `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`,
+    TIME_ON: `${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`,
+  };
+}
+
+/** Date/time inputs that follow the UTC clock until the operator edits the date or time (a manual / historical QSO). */
 class TimeFields {
   constructor(dateEl, timeEl) {
     this.dateEl = dateEl; this.timeEl = timeEl; this.auto = true;
@@ -89,6 +97,11 @@ class TimeFields {
   tick() { if (this.auto) { const n = utcNow(); this.dateEl.value = n.date; this.timeEl.value = n.time; } }
   freeze() { this.auto = false; }
   reset() { this.auto = true; this.tick(); }
+  /**
+   * QSO_DATE / TIME_ON for a QSO submitted at `at`: that instant while the fields are still following the clock, or
+   * exactly what the operator typed once they have edited the date or time themselves.
+   */
+  valuesAt(at) { return this.auto ? utcStamp(at) : this.values(); }
   values() {
     const d = this.dateEl.value.trim(); const t = this.timeEl.value.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error('Date must look like 2026-09-20');
@@ -208,4 +221,4 @@ function mcStatusLine(mc) {
   return html`<div>MC <span class="${MC_STATE_CLASS[state]}" title="${MC_STATE_HINT[state]}">listening on ${mc.address}:${mc.port}</span></div>${raw(err)}`;
 }
 
-App.util = { mcStatusLine, MC_STATE_CLASS, $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, TimeFields, followRig, stateIcon, qsoRows, qsoHead, currentStation, requireLogbook, DIGITAL };
+App.util = { mcStatusLine, MC_STATE_CLASS, $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, utcStamp, TimeFields, followRig, stateIcon, qsoRows, qsoHead, currentStation, requireLogbook, DIGITAL };

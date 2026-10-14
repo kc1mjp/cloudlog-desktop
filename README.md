@@ -1,3 +1,6 @@
+Note 2026-10-13T22.23.55
+========================
+
 # Cloudlog Desktop
 
 An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/Cloudlog) (Wavelog servers work too), built with Electron for Debian-based Linux.
@@ -43,6 +46,12 @@ In the app: Settings > Cloudlog (address + read/write API key, "Save and test co
 Settings > Radio (CAT) > "Share this radio (flrig XML-RPC port)" starts an flrig-compatible XML-RPC server for that radio (off by default, port 12345, this computer only). In fldigi choose Rig Control > flrig and enter the address and port. It uses the radio connection the app already has (no second serial/USB/network connection to the radio), runs independently of the Hamlib port, and both can be on at once for the same radio. Each radio needs its own XML-RPC port; saving a port that clashes with another radio's XML-RPC or Hamlib port, or with the radio's own connection, is refused. If the port cannot be opened (for example it is already in use), Settings shows the reason in red, the Dashboard shows no "open" line, and the radio connection and Hamlib port keep working. Changing the sharing settings reconnects that radio, like changing the Hamlib port does.
 
 ## Changelog
+
+### 0.4.3
+- New: two separate callbook enrichment controls in Settings > Callbook Lookup > "Add missing details to QSOs", each with its own "On a new QSO" switch and its own "On upload" switch (four independent on/off settings in all):
+  - **Add Lookup Data to QSO Log Event** fills a missing Name (the other operator's name), State, County and Country.
+  - **Add Lookup Grid if QSO Grid is Missing** fills a missing Gridsquare.
+- Lookup results now also carry State, County and Country (QRZ and HamQTH). County is saved as `ST,County` for United States contacts (the ADIF form) and as the provider gives it otherwise. Country is the provider's country name; no DXCC number is added.
 
 ### 0.4.2
 - New: flrig-compatible XML-RPC radio sharing, so fldigi and other FL-suite programs can use a radio managed by Cloudlog Desktop. Per radio, in Settings > Radio (CAT): an on/off switch (off by default), "Listen on" (default: this computer only) and a port (default 12345). It is independent of the Hamlib port: either, or both together, can share the same radio, and neither opens another connection to the radio. See "Sharing a radio with fldigi" above for the supported methods, error behaviour and limitations.
@@ -101,4 +110,3 @@ Settings > Radio (CAT) > "Share this radio (flrig XML-RPC port)" starts an flrig
 - "Sync now" is now always visible (Dashboard and Logbook), not just when something is waiting.
 - Data now always lives in `~/.config/cloudlog-desktop`, independent of how Electron would otherwise derive a folder name.
 - Fixed a related timing bug: the periodic auto-retry used to treat "never synced before" as "retry interval already elapsed," so the very first queued QSO after startup could upload almost immediately even with instant-upload turned off.
-

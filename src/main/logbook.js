@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const { QsoCache, UNASSIGNED, qsoTimeMs } = require('./qso-cache');
 const { parseAdif, generateAdif } = require('./adif');
 const { freqToBand, nowUtc } = require('./bands');
+const { normalizeCall } = require('../renderer/callbook-shared');
 
 // Fields kept from server downloads (keeps the cache small).
 const KEEP = ['CALL', 'QSO_DATE', 'TIME_ON', 'BAND', 'MODE', 'SUBMODE', 'FREQ', 'RST_SENT', 'RST_RCVD', 'NAME', 'QTH',
@@ -14,9 +15,10 @@ const KEEP = ['CALL', 'QSO_DATE', 'TIME_ON', 'BAND', 'MODE', 'SUBMODE', 'FREQ', 
 const slim = (r) => { const o = {}; for (const k of KEEP) if (r[k]) o[k] = r[k]; return o; };
 
 class LogService extends EventEmitter {
-  constructor({ dir, client, getSettings, dbFile }) {
+  constructor({ dir, client, getSettings, dbFile, enricher = null }) {
     super();
     this.dir = dir;
+    this.enricher = enricher; // callbook enrichment (callbook/enrich.js); without one QSOs are stored exactly as given
     this.client = client;
     this.getSettings = getSettings;
     this.cache = new QsoCache(dbFile || path.join(dir, 'qsocache.sqlite3'));
@@ -78,9 +80,29 @@ class LogService extends EventEmitter {
     return f;
   }
 
-  addQso(input, { source = 'manual', stationId = null, dedupe = false } = {}) {
+  addQso(input, opts = {}) {
+    return this._store(this.normalize(input), opts);
+  }
+
+  /**
+   * addQso for the five new-contact paths (Live QSO, Quick log, TCP, UDP, multicast): the lookup, when the settings
+   * call for one, happens before the QSO is stored so the upload already carries what it found. The input is
+   * normalised first - that fixes any default date/time and validates the QSO - so a slow lookup can never move the
+   * timestamp, and a duplicate is rejected before a lookup is spent on it. Lookup trouble never blocks the QSO.
+   */
+  async addQsoWithLookup(input, opts = {}) {
     const fields = this.normalize(input);
-    const logbookId = String(stationId || this.getSettings().cloudlog.currentStationId || UNASSIGNED);
+    if (!this.enricher) return this._store(fields, opts);
+    if (opts.dedupe && this.cache.findDedupeMatch(this._targetLogbook(opts), fields)) return null;
+    return this._store(await this.enricher.enrichNew(fields), opts); // _store checks for a duplicate again: one may have arrived meanwhile
+  }
+
+  _targetLogbook({ stationId = null } = {}) {
+    return String(stationId || this.getSettings().cloudlog.currentStationId || UNASSIGNED);
+  }
+
+  _store(fields, { source = 'manual', stationId = null, dedupe = false } = {}) {
+    const logbookId = this._targetLogbook({ stationId });
     if (dedupe && this.cache.findDedupeMatch(logbookId, fields)) return null;
     const id = crypto.randomUUID();
     const now = Date.now();
@@ -188,11 +210,18 @@ class LogService extends EventEmitter {
     this.syncing = true;
     this.emit('status');
     try {
-      for (const row of this.cache.listPending()) {
+      for (const queued of this.cache.listPending()) {
+        // Earlier rows awaited the network (upload, lookup), so look at this one as it is now: it may have been
+        // edited, deleted or uploaded in the meantime.
+        let row = this.cache.get(queued.id);
+        if (!row || row.sync_state !== 'pending') continue;
         const cur = this.getSettings().cloudlog.currentStationId;
         const sid = (row.logbook_id !== UNASSIGNED ? row.logbook_id : null) || (cur ? String(cur) : null);
         if (!sid) { this.lastError = 'Choose a logbook before uploading'; break; }
         if (sid !== row.logbook_id) this.cache.reassignLogbook(row.id, sid);
+        await this._enrichForUpload(row.id); // never throws; the QSO uploads as it is when nothing could be added
+        row = this.cache.get(row.id);
+        if (!row || row.sync_state !== 'pending') continue;
         let res;
         try {
           res = await this.client.postQso(generateAdif(JSON.parse(row.fields_json)), sid);
@@ -218,6 +247,35 @@ class LogService extends EventEmitter {
       this.emit('status');
     }
     return this.status();
+  }
+
+  /**
+   * Immediately before a queued QSO is uploaded: fill what the enabled "On upload" switches allow from the callbook
+   * and save it on the stored QSO itself (not just in the provider's result cache), so it survives a restart and is
+   * still there when a failed upload is retried. Works the same for QSOs saved before these switches existed.
+   * The row is read again after the lookup: the merge only fills what is still missing in the QSO as it is now, and
+   * is dropped if the QSO was meanwhile removed, uploaded or given a different callsign - a slow lookup never
+   * overwrites a newer edit.
+   */
+  async _enrichForUpload(id) {
+    if (!this.enricher) return;
+    try {
+      let row = this.cache.get(id);
+      if (!row || row.sync_state !== 'pending') return;
+      const plan = this.enricher.plan(JSON.parse(row.fields_json), 'upload');
+      if (!plan) return;
+      const result = await this.enricher.fetch(plan); // one lookup serves every category that needs data
+      if (!result) return;
+      row = this.cache.get(id);
+      if (!row || row.sync_state !== 'pending') return;
+      const fields = JSON.parse(row.fields_json);
+      if (normalizeCall(fields.CALL) !== plan.call) return;
+      const { fields: merged, filled } = this.enricher.merge(fields, result, plan.cats);
+      if (!filled.length) return;
+      this.cache.updateFieldsOnly(id, { fields: merged, updatedAt: Date.now() });
+      this._cursorState.clear();
+      this.emit('changed');
+    } catch { /* lookup or storage trouble must never stop the upload */ }
   }
 
   // ---- server logbook cache ---------------------------------------------

@@ -139,6 +139,10 @@ class QsoCache {
       UPDATE qsos SET callsign=@callsign, qso_time_utc_ms=@qsoTimeMs, band=@band, mode=@mode, freq_hz=@freqHz,
         sync_state=@state, error=@error, updated_at=@updatedAt, fields_json=@fieldsJson WHERE id=@id
     `);
+    this._updateFieldsOnly = this.db.prepare(`
+      UPDATE qsos SET callsign=@callsign, qso_time_utc_ms=@qsoTimeMs, band=@band, mode=@mode, freq_hz=@freqHz,
+        updated_at=@updatedAt, fields_json=@fieldsJson WHERE id=@id
+    `);
     this._setState = this.db.prepare('UPDATE qsos SET sync_state=@state, error=@error, synced_at=@syncedAt, updated_at=@updatedAt WHERE id=@id');
     this._reassignLogbook = this.db.prepare('UPDATE qsos SET logbook_id=?, station_id=? WHERE id=?');
     this._retryFailed = this.db.prepare("UPDATE qsos SET sync_state='pending', error='', updated_at=? WHERE sync_state='failed'");
@@ -225,6 +229,18 @@ class QsoCache {
     this._updateFields.run({
       id, callsign: cols.callsign, qsoTimeMs: cols.qsoTimeMs, band: cols.band, mode: cols.mode, freqHz: cols.freqHz,
       state, error: error || '', updatedAt, fieldsJson: JSON.stringify(fields),
+    });
+  }
+
+  /**
+   * Rewrite a row's fields without touching its sync state, error or logbook (used when upload-time lookup data is
+   * saved onto a queued QSO: the QSO stays pending/failed exactly as it was).
+   */
+  updateFieldsOnly(id, { fields, updatedAt }) {
+    const cols = deriveColumns(fields);
+    this._updateFieldsOnly.run({
+      id, callsign: cols.callsign, qsoTimeMs: cols.qsoTimeMs, band: cols.band, mode: cols.mode, freqHz: cols.freqHz,
+      updatedAt, fieldsJson: JSON.stringify(fields),
     });
   }
 

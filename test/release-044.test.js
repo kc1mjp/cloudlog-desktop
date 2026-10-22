@@ -579,13 +579,13 @@ test('Logbooks page: unconfigured and empty-collection states say so (and the em
     settings: rsettings({ current: null, eff: { kind: 'none', id: null, name: '', source: 'fallback', empty: true, unconfigured: true } }),
     result: { total: 0, fetchedAt: null, scope: { kind: 'none', empty: true, unconfigured: true } },
   });
-  assert.match(m.env.get('#lb-body').innerHTML, /colspan="10"[^>]*>No logbook is selected/);
+  assert.match(m.env.get('#lb-body').innerHTML, /colspan="10"[^>]*>No Logbook is selected/);
   const eff = { kind: 'collection', id: 'e', name: 'Empty', source: 'explicit', empty: true, unconfigured: false };
   m = await mountLogbook({
     settings: rsettings({ collections: [{ id: 'e', name: 'Empty', members: [] }], active: { kind: 'collection', id: 'e' }, eff }),
     result: { total: 0, fetchedAt: null, scope: eff },
   });
-  assert.match(m.env.get('#lb-body').innerHTML, /This collection has no logbooks/);
+  assert.match(m.env.get('#lb-body').innerHTML, /This Collection has no Logbooks/);
 });
 
 test('Existing Queued QSOs view: only a rightmost Logbook column is added; every queued QSO is still listed', async () => {

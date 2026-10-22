@@ -14,8 +14,8 @@ let lastScope = null;
     const { settings, info } = App.state;
     const c = settings.cloudlog;
     const query = new URLSearchParams(location.hash.split('?')[1] || '');
-    // Normal entry shows the effective Active collection (a collection or one logbook). `?id=` (View QSOs in Settings) opens
-    // that one logbook. Either way this is only this page's own view: Settings' Active collection and the Active logbook stay as they are.
+    // Normal entry shows the effective Active Collection (a Collection or one Logbook). `?id=` (View QSOs in Settings) opens
+    // that one Logbook. Either way this is only this page's own view: Settings' Active Collection and the Active Logbook stay as they are.
     const eff = effectiveScope();
     sel = query.get('collection') ? { kind: 'collection', id: query.get('collection') }
       : query.get('id') ? { kind: 'logbook', id: query.get('id') }
@@ -27,10 +27,10 @@ let lastScope = null;
     <div class="card" id="lb-card">
       <div class="card-header d-flex flex-wrap gap-2 align-items-center">
         <span class="me-2">Logbook</span>
-        <select id="lb-station" class="form-select form-select-sm" style="width:auto" aria-label="Logbook or collection">${raw(scopeOptions(c))}</select>
+        <select id="lb-station" class="form-select form-select-sm" style="width:auto" aria-label="Logbook or Collection">${raw(scopeOptions(c))}</select>
         <input id="lb-q" class="form-control form-control-sm" style="width:12rem" placeholder="Search call, name, ref…" value="${filters.q}">
-        <select id="lb-band" class="form-select form-select-sm" style="width:auto"><option value="">All bands</option>${raw(info.bands.map((b) => html`<option ${filters.band === b ? 'selected' : ''}>${b}</option>`).join(''))}</select>
-        <select id="lb-mode" class="form-select form-select-sm" style="width:auto"><option value="">All modes</option>${raw(info.modes.map((m) => html`<option ${filters.mode === m ? 'selected' : ''}>${m}</option>`).join(''))}</select>
+        <select id="lb-band" class="form-select form-select-sm" style="width:auto"><option value="">All Bands</option>${raw(info.bands.map((b) => html`<option ${filters.band === b ? 'selected' : ''}>${b}</option>`).join(''))}</select>
+        <select id="lb-mode" class="form-select form-select-sm" style="width:auto"><option value="">All Modes</option>${raw(info.modes.map((m) => html`<option ${filters.mode === m ? 'selected' : ''}>${m}</option>`).join(''))}</select>
         <div class="ms-auto d-flex gap-2 align-items-center">
           <span class="small text-muted" id="lb-info"></span>
           <div class="btn-group btn-group-sm">
@@ -61,14 +61,14 @@ let lastScope = null;
     drawQueue();
   }
 
-  /** Collections and individual logbooks in one picker, typed values so ids of different kinds can never collide. */
+  /** Collections and individual Logbooks in one picker, typed values so ids of different kinds can never collide. */
   function scopeOptions(c) {
     const cur = sel ? scopeValue(sel.kind, sel.id) : '';
     const cols = collectionList();
     const opt = (v, label) => html`<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
     const logbooks = c.stations.length
       ? c.stations.map((s) => opt(scopeValue('logbook', s.id), `${s.name} (${s.callsign})`)).join('')
-      : (sel && sel.kind === 'logbook' ? opt(scopeValue('logbook', sel.id), `Logbook #${sel.id}`) : html`<option value="">No logbook</option>`);
+      : (sel && sel.kind === 'logbook' ? opt(scopeValue('logbook', sel.id), `Logbook #${sel.id}`) : html`<option value="">No Logbook</option>`);
     return (cols.length ? html`<optgroup label="Collections">${raw(cols.map((x) => opt(scopeValue('collection', x.id), `${x.name} (${x.members.length})`)).join(''))}</optgroup>` : '')
       + html`<optgroup label="Logbooks">${raw(logbooks)}</optgroup>`;
   }
@@ -80,9 +80,9 @@ let lastScope = null;
     if (!btn || !warn) return;
     btn.disabled = downloadUnsupported;
     grp?.querySelector('.dropdown-toggle')?.classList.toggle('disabled', downloadUnsupported);
-    btn.title = downloadUnsupported ? "This Cloudlog server doesn't support logbook download" : '';
+    btn.title = downloadUnsupported ? "This server doesn't support Logbook download" : '';
     warn.classList.toggle('d-none', !downloadUnsupported);
-    if (downloadUnsupported) warn.textContent = "This Cloudlog server doesn't offer logbook download (that's a Wavelog-only API). QSOs you log from this app still upload normally - you just won't see the server's history here.";
+    if (downloadUnsupported) warn.textContent = "This server doesn't offer Logbook download. QSOs you log from this app still upload normally - you just won't see the server's history here.";
   }
 
   async function refresh(full) {
@@ -90,7 +90,7 @@ let lastScope = null;
     btn.disabled = true;
     try {
       if (!App.state.sync.configured) throw new Error('Connect to Cloudlog in Settings first');
-      if (!sel) throw new Error('Choose a logbook first');
+      if (!sel) throw new Error('Choose a Logbook first');
       const r = sel.kind === 'collection' ? await api('log:refreshScope', sel, { full }) : await api('log:refresh', sel.id, { full });
       toast(r.added ? `Downloaded ${r.added} QSO${r.added > 1 ? 's' : ''}` : 'Logbook is up to date', 'success');
       await load();
@@ -115,13 +115,13 @@ let lastScope = null;
     $('#lb-next').disabled = r.page * r.pageSize >= r.total;
     $('#lb-info').textContent = r.fetchedAt ? `Server data from ${new Date(r.fetchedAt).toLocaleString()}` : (downloadUnsupported ? 'Showing QSOs logged from this app only' : 'Not downloaded yet');
     if (lastScope && lastScope.unconfigured) {
-      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">No logbook is selected. Connect to Cloudlog and choose a logbook in Settings &gt; Logbooks.</td></tr>`;
+      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">No Logbook is selected. Connect to Cloudlog and choose a Logbook in Settings &gt; Logbooks.</td></tr>`;
     } else if (kind === 'collection' && lastScope && lastScope.empty) {
-      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">This collection has no logbooks. Add some in Settings &gt; Logbooks.</td></tr>`;
+      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">This Collection has no Logbooks. Add some in Settings &gt; Logbooks.</td></tr>`;
     } else if (!r.fetchedAt && !r.total) {
       $('#lb-body').innerHTML = downloadUnsupported
-        ? html`<tr><td colspan="10" class="text-center text-muted py-4">Nothing logged in ${kind === 'collection' ? 'this collection' : 'this logbook'} from this app yet. This server doesn't support downloading its existing history.</td></tr>`
-        : html`<tr><td colspan="10" class="text-center text-muted py-4">${kind === 'collection' ? 'These logbooks have' : 'This logbook has'} not been downloaded yet. Use <b>Update from server</b>.</td></tr>`;
+        ? html`<tr><td colspan="10" class="text-center text-muted py-4">Nothing logged in ${kind === 'collection' ? 'this Collection' : 'this Logbook'} from this app yet. This server doesn't support downloading its existing history.</td></tr>`
+        : html`<tr><td colspan="10" class="text-center text-muted py-4">${kind === 'collection' ? 'These Logbooks have' : 'This Logbook has'} not been downloaded yet. Use <b>Update from server</b>.</td></tr>`;
     }
   }
 
@@ -132,9 +132,9 @@ let lastScope = null;
     if (!box) return;
     queueList = await api('local:list', ['pending', 'failed']).catch(() => []);
     const s = App.state.sync;
-    const names = logbookNames(); // the queued QSO's own logbook, by id - never inferred from the Active logbook
+    const names = logbookNames(); // the queued QSO's own Logbook, by id - never inferred from the Active Logbook
     box.innerHTML = html`<div class="card mb-3 ${queueList.length ? 'border-warning' : ''}"><div class="card-header d-flex align-items-center gap-2 flex-wrap">
-      <span>Upload queue ${raw(queueList.length ? html`<span class="badge text-bg-warning">${queueList.length}</span>` : '<span class="badge text-bg-success">empty</span>')}</span>
+      <span>Upload Queue ${raw(queueList.length ? html`<span class="badge text-bg-warning">${queueList.length}</span>` : '<span class="badge text-bg-success">empty</span>')}</span>
       <span class="small text-muted">${s.lastError}</span>
       <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">
         <div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="q-instant" ${App.state.settings.sync.instant !== false ? 'checked' : ''}><label class="form-check-label small" for="q-instant">Instant upload</label></div>

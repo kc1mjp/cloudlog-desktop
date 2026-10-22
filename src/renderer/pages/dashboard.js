@@ -23,24 +23,24 @@
         <span><i class="fas fa-plug me-2"></i>Connect to your Cloudlog server to upload QSOs and see your logbooks. You can still log offline in the meantime.</span>
         <a class="btn btn-primary btn-sm" href="#/settings?tab=cloudlog">Connect to Cloudlog</a></div>` : '')}
       <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card h-100"><div class="card-header">Active logbook</div><div class="card-body">
+        <div class="col-md-3"><div class="card h-100"><div class="card-header">Active Logbook</div><div class="card-body">
           <div class="fs-5 fw-bold">${st ? st.name : 'None selected'}</div>
           <div class="text-muted">${st ? `${st.callsign} · ${st.grid}` : 'Pick one on the Logbooks page'}</div>
           <div class="small text-muted mt-1" id="dash-scope">Viewing: ${scope && scope.unconfigured ? 'nothing selected' : scopeName ? `${scopeName} (${scopeKindLabel})` : 'Active logbook'}</div>
-          <a href="#/settings?tab=logbooks" class="btn btn-sm btn-outline-primary mt-2">Change logbook</a></div></div></div>
+          <a href="#/settings?tab=logbooks" class="btn btn-sm btn-outline-primary mt-2">Change Logbook</a></div></div></div>
         <div class="col-md-3"><div class="card h-100"><div class="card-header">QSOs</div><div class="card-body">
           <div class="stat-num">${stats.today}</div><div class="text-muted">today (UTC)</div>
           <div class="mt-2 text-muted small">${stats.total} in ${scopeName ? scopeName : 'the loaded logbook'}</div></div></div></div>
-        <div class="col-md-3"><div class="card h-100"><div class="card-header">Upload queue</div><div class="card-body">
+        <div class="col-md-3"><div class="card h-100"><div class="card-header">Upload Queue</div><div class="card-body">
           <div class="stat-num">${qPending + qFailed}</div>
           <div class="text-muted">${qFailed ? `${qFailed} failed, ` : ''}${qPending} waiting</div>
           ${raw(qOther ? html`<div class="small text-muted">+${qOther} in other logbooks</div>` : '')}
           <div class="d-flex gap-2 mt-2"><a href="#/logbook" class="btn btn-sm btn-outline-primary">Review</a>
           <button class="btn btn-sm btn-primary" id="dash-sync" ${sync.configured ? '' : 'disabled'}><i class="fas fa-cloud-arrow-up me-1"></i>Sync now</button></div></div></div></div>
-        <div class="col-md-3"><div class="card h-100"><div class="card-header">Radio${raw(rigs.length > 1 ? html` <span class="badge text-bg-secondary">${rigs.length}</span>` : '')}</div><div class="card-body">
+        <div class="col-md-3"><div class="card h-100"><div class="card-header">Radio Status</div><div class="card-body">
           ${raw(rig && rig.state === 'connected' && rig.freqHz
             ? html`<div class="freq-readout">${fmtFreq(rig.freqHz)}</div><div class="text-muted">${rig.mode} · ${rig.label}</div>`
-            : rigs.length ? html`<div class="text-muted">${rig ? rig.message : 'No active radio selected'}</div><a href="#/settings?tab=radio" class="btn btn-sm btn-outline-primary mt-2">Radio settings</a>`
+            : rigs.length ? html`<div class="text-muted">${rig ? rig.message : 'No active radio selected'}</div><a href="#/settings?tab=radio" class="btn btn-sm btn-outline-primary mt-2">Radio Settings</a>`
             : html`<div class="text-muted">No radio set up</div><a href="#/settings?tab=radio" class="btn btn-sm btn-outline-primary mt-2">Add a radio</a>`)}
           ${raw(rig && rig.relay.listening ? html`<div class="small text-muted mt-2">Hamlib port ${rig.relay.port} open, ${rig.relay.clients} client(s)</div>` : '')}
           ${raw(rig && rig.xmlrpc && rig.xmlrpc.enabled && rig.xmlrpc.listening ? html`<div class="small text-muted ${rig.relay.listening ? '' : 'mt-2'}">XmlRPC port ${rig.xmlrpc.port} open, ${rig.xmlrpc.clients} client(s)</div>` : '')}

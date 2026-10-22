@@ -8,6 +8,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, saf
 const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs, migrateCallbook } = require('./store');
 const { CloudlogClient, CloudlogError } = require('./cloudlog');
 const { LogService } = require('./logbook');
+const collections = require('./collections');
 const { RigManager } = require('./rig');
 const { validateXmlrpcSharing } = require('./flrigxml');
 const { AdifServer } = require('./adifserver');
@@ -145,7 +146,16 @@ const callbookEnricher = new CallbookEnricher({ getSettings: () => settings.data
 
 /** settings.data as the renderer may see it: callbook passwords are replaced by a has-password flag. */
 function publicSettings() {
-  return { ...settings.data, callbook: callbookConfig.publicConfig(settings.data.callbook) };
+  // effectiveScope: what the Dashboard and the Logbooks page show by default (computed, never stored).
+  return { ...settings.data, callbook: callbookConfig.publicConfig(settings.data.callbook), effectiveScope: collections.scopeMeta(collections.resolveScope(settings.data)) };
+}
+
+/** Tell every open page that the viewing scope (selection or membership) changed; no QSO or queue row is touched. */
+function scopeChanged() {
+  settings.saveNow();
+  log.invalidateScopeCaches();
+  send('settings', publicSettings());
+  send('qso:changed', {});
 }
 
 const externalLinks = createExternalLinks({ getCloudlogUrl: () => settings.data.cloudlog.url, openExternal: (url) => shell.openExternal(url) });
@@ -160,7 +170,8 @@ const api = {
   'settings:set': async (patch) => {
     const before = JSON.parse(JSON.stringify(settings.data));
     // Callbook credentials only change through callbook:save, so a generic patch can never touch them.
-    const { callbook: _callbook, ...safePatch } = patch || {};
+    // Collections and the Active collection only change through the collections:* calls, which validate them.
+    const { callbook: _callbook, logbookCollections: _lc, effectiveScope: _es, ...safePatch } = patch || {};
     deepMerge(settings.data, safePatch);
     settings.saveNow();
     const now = settings.data;
@@ -220,7 +231,9 @@ const api = {
     }
     settings.saveNow();
     log.online = true;
+    log.invalidateScopeCaches(); // logbooks may have appeared/disappeared: collection scopes are resolved again
     send('settings', publicSettings());
+    send('qso:changed', {});
     return stations;
   },
   'stations:setCurrent': (id) => {
@@ -236,8 +249,34 @@ const api = {
     return { id: rec.id, call: rec.fields.CALL };
   },
   'qso:workedBefore': (call) => log.workedBefore(call, currentStation()),
-  'log:query': (params) => log.query({ ...params, stationId: params.stationId || currentStation() }),
-  'log:stats': () => log.stats(currentStation()),
+  // Scope: params.scope = {kind:'logbook'|'collection', id} (a page's temporary choice) is resolved here from the saved
+  // settings - the renderer never sends a list of logbook ids. Without one, the effective Active collection is used.
+  // The older params.stationId still means that one logbook.
+  'log:query': (params = {}) => collections.queryScoped(log, settings.data, params),
+  'log:stats': () => collections.statsScoped(log, settings.data),
+  'log:refreshScope': async (sel, opts) => {
+    const scope = collections.resolveScope(settings.data, sel);
+    let added = 0; let total = 0;
+    for (const id of scope.logbookIds) {
+      try {
+        const r = await log.refreshRemote(id, opts);
+        added += r.added; total += r.total;
+      } catch (e) {
+        if (e instanceof CloudlogError && /does not offer QSO download/.test(e.message)) {
+          e.message = "This Cloudlog server doesn't support downloading the logbook (api/get_contacts_adif isn't available on Cloudlog, only on Wavelog). QSOs you log here still upload fine - you just won't see the server's history in this list.";
+        }
+        throw e;
+      }
+    }
+    return { added, total };
+  },
+
+  // ---- Logbook Collections: metadata only (settings.json); QSOs and the queue are never touched ----
+  'collections:create': (name, members) => { const c = collections.createCollection(settings.data, name, members); scopeChanged(); return c; },
+  'collections:rename': (id, name) => { const c = collections.renameCollection(settings.data, id, name); scopeChanged(); return c; },
+  'collections:setMembers': (id, members) => { const c = collections.setMembers(settings.data, id, members); scopeChanged(); return c; },
+  'collections:delete': (id) => { collections.deleteCollection(settings.data, id); scopeChanged(); return true; },
+  'collections:setActive': (sel) => { collections.setActive(settings.data, sel); scopeChanged(); return publicSettings(); },
   'log:clearCache': (stationId) => {
     const id = String(stationId || '').trim();
     if (!id) throw new Error('Choose a logbook first');
@@ -352,6 +391,7 @@ app.whenReady().then(async () => {
   settings = new JsonStore(path.join(dir, 'settings.json'), SETTINGS_DEFAULTS);
   migrateRigs(settings.data);
   migrateCallbook(settings.data);
+  collections.migrateCollections(settings.data); // idempotent; adds the empty block for settings from before 0.4.4
   // Radios only auto-connect on launch if the operator opted in per-radio;
   // otherwise every radio starts turned off, however it was left last time.
   for (const r of settings.data.rigs) r.enabled = !!r.activeOnStartup;

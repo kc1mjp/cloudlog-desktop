@@ -63,12 +63,12 @@ const assertNoSecrets = (v) => {
 };
 
 // ---- versioning -----------------------------------------------------------------------------------
-test('version metadata reports 0.4.3', () => {
+test('version metadata reports 0.4.4', () => {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(pkg.version, '0.4.3');
-  assert.strictEqual(lock.version, '0.4.3');
-  assert.strictEqual(lock.packages[''].version, '0.4.3');
+  assert.strictEqual(pkg.version, '0.4.4');
+  assert.strictEqual(lock.version, '0.4.4');
+  assert.strictEqual(lock.packages[''].version, '0.4.4');
 });
 
 // ---- callsigns and profile links ------------------------------------------------------------------
@@ -116,7 +116,7 @@ test('main process opens profile links itself, from its own URL table, and never
   assert.ok(!/'settings:get': \(\) => settings\.data/.test(main));
   assert.ok(!/send\('settings', settings\.data\)/.test(main));
   assert.ok(!/return settings\.data;/.test(main));
-  assert.match(main, /const \{ callbook: _callbook, \.\.\.safePatch \}/);
+  assert.match(main, /const \{ callbook: _callbook, [^}]*\.\.\.safePatch \}/); // 0.4.4 also strips logbookCollections/effectiveScope
 });
 
 // ---- credential storage and settings --------------------------------------------------------------

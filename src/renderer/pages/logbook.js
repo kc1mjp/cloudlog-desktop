@@ -1,10 +1,11 @@
 'use strict';
 (() => {
-  const { $, html, raw, api, toast, qsoRows, qsoHead, fmtDate, fmtTime } = App.util;
+  const { $, html, raw, api, toast, qsoRows, qsoHead, fmtDate, fmtTime, logbookLabel, logbookNames, scopeValue, parseScopeValue, collectionList, effectiveScope } = App.util;
 
   // ============================ Logbook (QSO list + upload queue) ================
-  const COLUMNS = ['grid', 'country']; // Date, UTC, Call, Band, Mode, RST, Grid, Country
-  let el; let page = 1; let filters = { q: '', band: '', mode: '' }; let searchTimer; let sel = null;
+  const COLUMNS = ['grid', 'country', 'logbook']; // Date, UTC, Call, Band, Mode, RST, Grid, Country, (status), Logbook
+  let el; let page = 1; let filters = { q: '', band: '', mode: '' }; let searchTimer; let sel = null; // sel: this page's own view {kind:'logbook'|'collection', id}; never written to Settings
+let lastScope = null;
   let downloadUnsupported = false; // sticky for this session once the server tells us it has no get_contacts_adif
 
   function mount(root) {
@@ -13,14 +14,20 @@
     const { settings, info } = App.state;
     const c = settings.cloudlog;
     const query = new URLSearchParams(location.hash.split('?')[1] || '');
-    sel = query.get('id') || c.currentStationId;
+    // Normal entry shows the effective Active collection (a collection or one logbook). `?id=` (View QSOs in Settings) opens
+    // that one logbook. Either way this is only this page's own view: Settings' Active collection and the Active logbook stay as they are.
+    const eff = effectiveScope();
+    sel = query.get('collection') ? { kind: 'collection', id: query.get('collection') }
+      : query.get('id') ? { kind: 'logbook', id: query.get('id') }
+      : eff && !eff.unconfigured && eff.id ? { kind: eff.kind, id: eff.id }
+        : (c.currentStationId ? { kind: 'logbook', id: String(c.currentStationId) } : null);
     page = 1;
     el.innerHTML = html`
     <div id="queue"></div>
     <div class="card" id="lb-card">
       <div class="card-header d-flex flex-wrap gap-2 align-items-center">
         <span class="me-2">Logbook</span>
-        <select id="lb-station" class="form-select form-select-sm" style="width:auto">${raw(c.stations.length ? c.stations.map((s) => html`<option value="${s.id}" ${s.id === String(sel) ? 'selected' : ''}>${s.name} (${s.callsign})</option>`).join('') : html`<option value="${sel || ''}">${sel ? `Logbook #${sel}` : 'No logbook'}</option>`)}</select>
+        <select id="lb-station" class="form-select form-select-sm" style="width:auto" aria-label="Logbook or collection">${raw(scopeOptions(c))}</select>
         <input id="lb-q" class="form-control form-control-sm" style="width:12rem" placeholder="Search call, name, ref…" value="${filters.q}">
         <select id="lb-band" class="form-select form-select-sm" style="width:auto"><option value="">All bands</option>${raw(info.bands.map((b) => html`<option ${filters.band === b ? 'selected' : ''}>${b}</option>`).join(''))}</select>
         <select id="lb-mode" class="form-select form-select-sm" style="width:auto"><option value="">All modes</option>${raw(info.modes.map((m) => html`<option ${filters.mode === m ? 'selected' : ''}>${m}</option>`).join(''))}</select>
@@ -41,7 +48,7 @@
       </div>
     </div>`;
 
-    $('#lb-station').addEventListener('change', (e) => { sel = e.target.value; page = 1; load(); });
+    $('#lb-station').addEventListener('change', (e) => { sel = parseScopeValue(e.target.value); page = 1; load(); });
     $('#lb-q').addEventListener('input', (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filters.q = e.target.value; page = 1; load(); }, 200); });
     $('#lb-band').addEventListener('change', (e) => { filters.band = e.target.value; page = 1; load(); });
     $('#lb-mode').addEventListener('change', (e) => { filters.mode = e.target.value; page = 1; load(); });
@@ -52,6 +59,18 @@
     applyDownloadState();
     load();
     drawQueue();
+  }
+
+  /** Collections and individual logbooks in one picker, typed values so ids of different kinds can never collide. */
+  function scopeOptions(c) {
+    const cur = sel ? scopeValue(sel.kind, sel.id) : '';
+    const cols = collectionList();
+    const opt = (v, label) => html`<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
+    const logbooks = c.stations.length
+      ? c.stations.map((s) => opt(scopeValue('logbook', s.id), `${s.name} (${s.callsign})`)).join('')
+      : (sel && sel.kind === 'logbook' ? opt(scopeValue('logbook', sel.id), `Logbook #${sel.id}`) : html`<option value="">No logbook</option>`);
+    return (cols.length ? html`<optgroup label="Collections">${raw(cols.map((x) => opt(scopeValue('collection', x.id), `${x.name} (${x.members.length})`)).join(''))}</optgroup>` : '')
+      + html`<optgroup label="Logbooks">${raw(logbooks)}</optgroup>`;
   }
 
   function applyDownloadState() {
@@ -71,7 +90,8 @@
     btn.disabled = true;
     try {
       if (!App.state.sync.configured) throw new Error('Connect to Cloudlog in Settings first');
-      const r = await api('log:refresh', sel, { full });
+      if (!sel) throw new Error('Choose a logbook first');
+      const r = sel.kind === 'collection' ? await api('log:refreshScope', sel, { full }) : await api('log:refresh', sel.id, { full });
       toast(r.added ? `Downloaded ${r.added} QSO${r.added > 1 ? 's' : ''}` : 'Logbook is up to date', 'success');
       await load();
     } catch (e) {
@@ -84,18 +104,24 @@
 
   async function load() {
     if (!el) return;
-    const r = await api('log:query', { stationId: sel, ...filters, page, pageSize: 50 }).catch((e) => { toast(e.message, 'danger'); return null; });
+    const r = await api('log:query', { ...(sel ? { scope: sel } : {}), ...filters, page, pageSize: 50 }).catch((e) => { toast(e.message, 'danger'); return null; });
     if (!r || !el) return;
+    lastScope = r.scope || null;
+    const kind = lastScope ? lastScope.kind : (sel ? sel.kind : 'logbook');
     $('#lb-body').innerHTML = qsoRows(r.rows.map((x) => ({ ...x })), COLUMNS);
     const from = r.total ? (r.page - 1) * r.pageSize + 1 : 0;
     $('#lb-count').textContent = `${from}–${Math.min(r.total, r.page * r.pageSize)} of ${r.total}`;
     $('#lb-prev').disabled = r.page <= 1;
     $('#lb-next').disabled = r.page * r.pageSize >= r.total;
     $('#lb-info').textContent = r.fetchedAt ? `Server data from ${new Date(r.fetchedAt).toLocaleString()}` : (downloadUnsupported ? 'Showing QSOs logged from this app only' : 'Not downloaded yet');
-    if (!r.fetchedAt && !r.total) {
+    if (lastScope && lastScope.unconfigured) {
+      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">No logbook is selected. Connect to Cloudlog and choose a logbook in Settings &gt; Logbooks.</td></tr>`;
+    } else if (kind === 'collection' && lastScope && lastScope.empty) {
+      $('#lb-body').innerHTML = html`<tr><td colspan="10" class="text-center text-muted py-4">This collection has no logbooks. Add some in Settings &gt; Logbooks.</td></tr>`;
+    } else if (!r.fetchedAt && !r.total) {
       $('#lb-body').innerHTML = downloadUnsupported
-        ? html`<tr><td colspan="9" class="text-center text-muted py-4">Nothing logged in this logbook from this app yet. This server doesn't support downloading its existing history.</td></tr>`
-        : html`<tr><td colspan="9" class="text-center text-muted py-4">This logbook has not been downloaded yet. Use <b>Update from server</b>.</td></tr>`;
+        ? html`<tr><td colspan="10" class="text-center text-muted py-4">Nothing logged in ${kind === 'collection' ? 'this collection' : 'this logbook'} from this app yet. This server doesn't support downloading its existing history.</td></tr>`
+        : html`<tr><td colspan="10" class="text-center text-muted py-4">${kind === 'collection' ? 'These logbooks have' : 'This logbook has'} not been downloaded yet. Use <b>Update from server</b>.</td></tr>`;
     }
   }
 
@@ -106,6 +132,7 @@
     if (!box) return;
     queueList = await api('local:list', ['pending', 'failed']).catch(() => []);
     const s = App.state.sync;
+    const names = logbookNames(); // the queued QSO's own logbook, by id - never inferred from the Active logbook
     box.innerHTML = html`<div class="card mb-3 ${queueList.length ? 'border-warning' : ''}"><div class="card-header d-flex align-items-center gap-2 flex-wrap">
       <span>Upload queue ${raw(queueList.length ? html`<span class="badge text-bg-warning">${queueList.length}</span>` : '<span class="badge text-bg-success">empty</span>')}</span>
       <span class="small text-muted">${s.lastError}</span>
@@ -116,12 +143,13 @@
         ${raw(s.failed ? '<button class="btn btn-sm btn-outline-warning" id="q-retry">Retry failed</button>' : '')}
         <button class="btn btn-sm btn-outline-secondary" id="q-export">Save as ADIF…</button>
       </div></div>
-      ${raw(queueList.length ? html`<div class="table-responsive"><table class="table table-tight mb-0"><tbody>${raw(queueList.slice(0, 50).map((r) => html`<tr>
+      ${raw(queueList.length ? html`<div class="table-responsive"><table class="table table-tight mb-0"><thead><tr><th>Date (UTC)</th><th>Call</th><th>Band / Mode</th><th>Status</th><th></th><th>Logbook</th></tr></thead><tbody>${raw(queueList.slice(0, 50).map((r) => html`<tr>
         <td>${fmtDate(r.fields.QSO_DATE)} ${fmtTime(r.fields.TIME_ON)}</td><td class="fw-bold">${r.fields.CALL}</td><td>${r.fields.BAND} ${r.fields.MODE}</td>
         <td class="wrap">${raw(r.state === 'failed' ? html`<span class="text-danger">${r.error}</span>` : '<span class="text-muted">queued</span>')}</td>
         <td class="text-end text-nowrap">
           <button class="btn btn-sm btn-outline-secondary" data-edit="${r.id}" title="Edit before it uploads"><i class="fas fa-pen"></i></button>
-          <button class="btn btn-sm btn-outline-danger" data-del="${r.id}" title="Discard this QSO"><i class="fas fa-trash"></i></button></td></tr>`).join(''))}</tbody></table></div>`
+          <button class="btn btn-sm btn-outline-danger" data-del="${r.id}" title="Discard this QSO"><i class="fas fa-trash"></i></button></td>
+        <td class="wrap">${logbookLabel(r.logbookId, names)}</td></tr>`).join(''))}</tbody></table></div>`
         : '<div class="card-body text-muted small py-2">Nothing waiting - everything logged so far has been sent.</div>')}
       </div>`;
     $('#q-instant').addEventListener('change', (e) => api('settings:set', { sync: { instant: e.target.checked } }));

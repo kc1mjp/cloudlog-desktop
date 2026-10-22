@@ -120,7 +120,7 @@ class LogService extends EventEmitter {
 
   localList(states) {
     return this.cache.listLocal(states).map((row) => ({
-      id: row.id, fields: JSON.parse(row.fields_json), stationId: row.station_id, state: row.sync_state,
+      id: row.id, fields: JSON.parse(row.fields_json), stationId: row.station_id, logbookId: row.logbook_id, state: row.sync_state,
       error: row.error || '', source: row.source, created: row.created_at,
     }));
   }
@@ -316,20 +316,30 @@ class LogService extends EventEmitter {
     this.emit('changed');
   }
 
-  query({ stationId, q = '', band = '', mode = '', page = 1, pageSize = 50 }) {
-    if (!stationId) return { rows: [], total: 0, page: 1, pageSize, fetchedAt: null, cached: 0 };
-    const logbookId = String(stationId);
+  /** Forget keyset cursors (collection membership / selection changed, or the data did). The next page request restarts at page 1. */
+  invalidateScopeCaches() { this._cursorState.clear(); }
+
+  /**
+   * Browse QSOs. The scope is `logbookIds` (a resolved collection or logbook scope) or the older single `stationId`.
+   * With neither, or with an empty list, the result is empty: this never falls back to every QSO. The scope is applied
+   * in the SQL before counting and paging, over one table, so a QSO can never appear twice.
+   */
+  query({ stationId, logbookIds, q = '', band = '', mode = '', page = 1, pageSize = 50 }) {
+    const ids = [...new Set((logbookIds || (stationId ? [stationId] : [])).map(String).filter(Boolean))];
+    if (!ids.length) return { rows: [], total: 0, page: 1, pageSize, fetchedAt: null, cached: 0 };
     const needle = q.trim().toUpperCase();
-    const key = JSON.stringify([logbookId, needle, band, mode, pageSize]);
+    const key = JSON.stringify([[...ids].sort(), needle, band, mode, pageSize]);
     let st = this._cursorState.get(key);
     if (!st) { st = { cursors: [null] }; this._cursorState.set(key, st); }
     const p = Math.max(1, Math.min(page, st.cursors.length));
     const cursor = st.cursors[p - 1];
-    const { rows, nextCursor } = this.cache.pageQuery({ logbookId, band, mode, needle, pageSize, cursor });
+    const { rows, nextCursor } = this.cache.pageQuery({ logbookIds: ids, band, mode, needle, pageSize, cursor });
     if (p === st.cursors.length && nextCursor) st.cursors.push(nextCursor);
-    const total = this.cache.countQuery({ logbookId, band, mode, needle });
-    const meta = this.cache.getSyncMeta(logbookId);
-    return { rows, total, page: p, pageSize, fetchedAt: meta.fetchedAt, cached: this.cache.countRemoteByLogbook(logbookId) };
+    const total = this.cache.countQuery({ logbookIds: ids, band, mode, needle });
+    // "Server data from": the oldest download among the logbooks in view; unknown while any of them was never downloaded.
+    const fetched = ids.map((id) => this.cache.getSyncMeta(id).fetchedAt);
+    const fetchedAt = fetched.every(Boolean) ? Math.min(...fetched) : null;
+    return { rows, total, page: p, pageSize, fetchedAt, cached: this.cache.countRemoteByLogbooks(ids) };
   }
 
   /** Callsign history within one logbook, newest first. Uses the (logbook_id, callsign, time) index. */
@@ -366,13 +376,21 @@ class LogService extends EventEmitter {
     };
   }
 
-  stats(stationId) {
-    if (!stationId) return { total: 0, today: 0, recent: [] };
-    const logbookId = String(stationId);
+  /**
+   * Dashboard numbers for a scope (`logbookIds`, or a single logbook id for older callers). Totals count stored and
+   * queued rows the same way they always have (a queued QSO is a row in the same table, so it is counted once and stays
+   * counted once when it becomes stored). `queue` splits the not-yet-uploaded QSOs by actual owner: those in this scope
+   * are what the Dashboard displays; `other*` are elsewhere (never assigned to the current Active logbook by inference).
+   */
+  stats(scope) {
+    const ids = [...new Set((Array.isArray(scope) ? scope : scope ? [scope] : []).map(String).filter(Boolean))];
+    const queue = this.cache.queueCountsByLogbooks(ids);
+    if (!ids.length) return { total: 0, today: 0, recent: [], queue };
     const today = nowUtc().date;
     const startMs = qsoTimeMs({ QSO_DATE: today, TIME_ON: '000000' });
-    const { rows: recent } = this.cache.pageQuery({ logbookId, band: '', mode: '', needle: '', pageSize: 10, cursor: null });
-    return { total: this.cache.countByLogbook(logbookId), today: this.cache.countToday(logbookId, startMs, startMs + 86400000), recent };
+    // Scope first, then the limit: the ten newest QSOs *of the scope*.
+    const { rows: recent } = this.cache.pageQuery({ logbookIds: ids, band: '', mode: '', needle: '', pageSize: 10, cursor: null });
+    return { total: this.cache.countByLogbooks(ids), today: this.cache.countTodayLogbooks(ids, startMs, startMs + 86400000), recent, queue };
   }
 }
 

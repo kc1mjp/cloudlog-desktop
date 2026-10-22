@@ -881,11 +881,11 @@ test('Quick log keeps supplying its own timestamp: this release does not change 
 }));
 
 // ---- release metadata ---------------------------------------------------------------------------------------------------------------
-test('0.4.3 release metadata', () => {
+test('0.4.4 release metadata', () => {
   const pkg = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(pkg.version, '0.4.3');
-  assert.strictEqual(lock.version, '0.4.3');
-  assert.strictEqual(lock.packages[''].version, '0.4.3');
+  assert.strictEqual(pkg.version, '0.4.4');
+  assert.strictEqual(lock.version, '0.4.4');
+  assert.strictEqual(lock.packages[''].version, '0.4.4');
   assert.ok(pkg.scripts.test.includes('test/release-043.test.js'), 'the new suite is part of npm test');
 });

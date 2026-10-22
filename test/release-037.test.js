@@ -109,7 +109,7 @@ async function mountDashboard(recent) {
 test('Dashboard: no Station column, Notes replaced by Country, header text exact', async () => {
   const out = await mountDashboard([FULL]);
   const thead = /<thead>[\s\S]*?<\/thead>/.exec(out)[0];
-  assert.deepStrictEqual(headers(thead), ['Date', 'UTC', 'Call', 'Band', 'Mode', 'RST', 'Country', '']);
+  assert.deepStrictEqual(headers(thead), ['Date', 'UTC', 'Call', 'Band', 'Mode', 'RST', 'Country', '', 'Logbook']); // 0.4.4 adds the rightmost Logbook column
   assert.ok(!/Station|Notes/.test(thead));
   assert.ok(thead.includes('<th>Country</th>'));
 });
@@ -134,7 +134,7 @@ test('Dashboard: missing, null or blank country renders an empty cell, not undef
 
 test('Dashboard: no QSOs shows the empty row spanning every column', async () => {
   const out = await mountDashboard([]);
-  assert.match(out, /colspan="8"[^>]*>No QSOs yet/);
+  assert.match(out, /colspan="9"[^>]*>No QSOs yet/);
 });
 
 // ---- Logbook -----------------------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ async function mountLogbook(rows, { total = rows.length, page = 1, pageSize = 50
 test('Logbook: Station is replaced by Grid, Notes by Country, header text exact', async () => {
   const { root } = await mountLogbook([FULL]);
   const thead = /<thead>[\s\S]*?<\/thead>/.exec(root.innerHTML)[0];
-  assert.deepStrictEqual(headers(thead), ['Date', 'UTC', 'Call', 'Band', 'Mode', 'RST', 'Grid', 'Country', '']);
+  assert.deepStrictEqual(headers(thead), ['Date', 'UTC', 'Call', 'Band', 'Mode', 'RST', 'Grid', 'Country', '', 'Logbook']); // 0.4.4 adds the rightmost Logbook column
   assert.ok(!/Station|Notes/.test(thead));
   assert.ok(thead.includes('<th>Grid</th><th>Country</th>'));
 });
@@ -174,10 +174,10 @@ test('Logbook: missing, null or blank grid/country render empty cells and the re
   assert.deepStrictEqual(rows.map((r) => r[2]), ['W1NOC', 'G0NOG', 'DL0NUL', 'VE3BLK']);
 });
 
-test('Logbook: empty-state messages span all nine columns', async () => {
+test('Logbook: empty-state messages span all ten columns', async () => {
   const { body } = await mountLogbook([], { total: 0, fetchedAt: null });
-  assert.match(body.innerHTML, /colspan="9"/);
-  assert.ok(!/colspan="8"/.test(body.innerHTML));
+  assert.match(body.innerHTML, /colspan="10"/);
+  assert.ok(!/colspan="9"/.test(body.innerHTML));
 });
 
 // ---- Logbook pagination -------------------------------------------------------------------------------------

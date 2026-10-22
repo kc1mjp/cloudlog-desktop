@@ -63,6 +63,14 @@ function rowToFields(row) {
   return f;
 }
 
+/** SQL fragment + params restricting to a finite list of logbook ids. Callers guarantee a non-empty list. */
+function logbookClause(ids) {
+  return ids.length === 1 ? { sql: 'logbook_id = ?', params: [ids[0]] } : { sql: `logbook_id IN (${ids.map(() => '?').join(',')})`, params: ids };
+}
+
+/** Distinct, non-empty string ids. An empty result means "no logbooks" - never "all logbooks". */
+const cleanIds = (ids) => [...new Set((ids || []).map((x) => String(x)).filter(Boolean))];
+
 class QsoCache {
   constructor(file) {
     this.file = file;
@@ -324,8 +332,12 @@ class QsoCache {
    * `cursor` (if given) is the {t, id} of the last row on the previous page - never an OFFSET.
    * Returns up to `pageSize` rows plus whether more exist after them.
    */
-  pageQuery({ logbookId, band, mode, needle, pageSize, cursor }) {
-    const where = ['logbook_id = ?']; const params = [logbookId];
+  pageQuery({ logbookId, logbookIds, band, mode, needle, pageSize, cursor }) {
+    // `logbookIds` (a scope) or the older single `logbookId`. No ids at all is an empty result, never an unfiltered query.
+    const ids = cleanIds(logbookIds || (logbookId ? [logbookId] : []));
+    if (!ids.length) return { rows: [], nextCursor: null };
+    const c = logbookClause(ids);
+    const where = [c.sql]; const params = [...c.params];
     if (cursor) { where.push('(qso_time_utc_ms < ? OR (qso_time_utc_ms = ? AND id < ?))'); params.push(cursor.t, cursor.t, cursor.id); }
     if (band) { where.push('band = ?'); params.push(band); }
     if (mode) { where.push('mode = ?'); params.push(mode); }
@@ -336,16 +348,52 @@ class QsoCache {
     const hasMore = rows.length > pageSize;
     const page = rows.slice(0, pageSize);
     const last = page[page.length - 1];
-    return { rows: page.map(rowToFields), nextCursor: hasMore && last ? { t: last.qso_time_utc_ms, id: last.id } : null };
+    // `_logbookId` is the QSO's actual owning logbook, so the UI can name it without a per-row lookup.
+    return { rows: page.map((r) => Object.assign(rowToFields(r), { _logbookId: r.logbook_id })), nextCursor: hasMore && last ? { t: last.qso_time_utc_ms, id: last.id } : null };
   }
 
-  countQuery({ logbookId, band, mode, needle }) {
-    const where = ['logbook_id = ?']; const params = [logbookId];
+  countQuery({ logbookId, logbookIds, band, mode, needle }) {
+    const ids = cleanIds(logbookIds || (logbookId ? [logbookId] : []));
+    if (!ids.length) return 0;
+    const c = logbookClause(ids);
+    const where = [c.sql]; const params = [...c.params];
     if (band) { where.push('band = ?'); params.push(band); }
     if (mode) { where.push('mode = ?'); params.push(mode); }
     if (needle) { where.push('(callsign LIKE ? OR UPPER(fields_json) LIKE ?)'); params.push(`%${needle}%`, `%${needle}%`); }
     const sql = `SELECT COUNT(*) AS n FROM qsos WHERE ${where.join(' AND ')}`;
     return this.db.prepare(sql).get(...params).n;
+  }
+
+  /** Total QSOs (stored and queued rows alike, exactly as countByLogbook counts them) across a list of logbooks. */
+  countByLogbooks(logbookIds) { return this.countQuery({ logbookIds }); }
+
+  countTodayLogbooks(logbookIds, startMs, endMs) {
+    const ids = cleanIds(logbookIds);
+    if (!ids.length) return 0;
+    const c = logbookClause(ids);
+    return this.db.prepare(`SELECT COUNT(*) AS n FROM qsos WHERE ${c.sql} AND qso_time_utc_ms >= ? AND qso_time_utc_ms < ?`).get(...c.params, startMs, endMs).n;
+  }
+
+  countRemoteByLogbooks(logbookIds) {
+    const ids = cleanIds(logbookIds);
+    if (!ids.length) return 0;
+    const c = logbookClause(ids);
+    return this.db.prepare(`SELECT COUNT(*) AS n FROM qsos WHERE ${c.sql} AND source = 'remote'`).get(...c.params).n;
+  }
+
+  /**
+   * Queued (pending/failed, not-yet-uploaded) QSOs split into those owned by `logbookIds` and the rest (other logbooks
+   * and the unassigned bucket). Read-only; ownership is each row's own logbook_id, never the current Active logbook.
+   */
+  queueCountsByLogbooks(logbookIds) {
+    const inScope = new Set(cleanIds(logbookIds));
+    const out = { pending: 0, failed: 0, otherPending: 0, otherFailed: 0 };
+    for (const r of this.db.prepare("SELECT logbook_id AS lb, sync_state AS state, COUNT(*) AS n FROM qsos WHERE source != 'remote' AND sync_state IN ('pending','failed') GROUP BY logbook_id, sync_state").all()) {
+      const key = inScope.has(r.lb) ? '' : 'other';
+      const field = key ? `other${r.state === 'failed' ? 'Failed' : 'Pending'}` : r.state;
+      out[field] += r.n;
+    }
+    return out;
   }
 
   // ---- cache clearing -------------------------------------------------------

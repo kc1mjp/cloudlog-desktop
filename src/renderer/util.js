@@ -138,18 +138,50 @@ const QSO_COLUMNS = {
 
 const qsoColumns = (cols) => cols.map((k) => QSO_COLUMNS[k]).filter(Boolean);
 
+// ---- logbook names / typed scope values (0.4.4) ----------------------------------------------------------------------
+const UNASSIGNED_ID = '__unassigned__'; // the bucket for a QSO queued before any logbook was chosen
+
+/** Map logbook id -> display name, built once per render from the cached station list (no per-row lookups). */
+function logbookNames() {
+  const st = (App.state.settings && App.state.settings.cloudlog && App.state.settings.cloudlog.stations) || [];
+  return new Map(st.map((s) => [String(s.id), s.name || `Logbook #${s.id}`]));
+}
+/** The name shown in a "Logbook" column. A QSO that was never assigned says so instead of being given a logbook. */
+function logbookLabel(id, names = logbookNames()) {
+  if (id === undefined || id === null || id === '') return '';
+  if (String(id) === UNASSIGNED_ID) return 'Unassigned';
+  return names.get(String(id)) || `Logbook #${id}`;
+}
+/** Typed values for scope pickers: "logbook:<id>" / "collection:<id>", so a logbook id and a collection id can never collide. */
+const scopeValue = (kind, id) => `${kind}:${id}`;
+function parseScopeValue(v) {
+  const s = String(v || ''); const i = s.indexOf(':');
+  const kind = s.slice(0, i); const id = s.slice(i + 1);
+  return i > 0 && id && (kind === 'logbook' || kind === 'collection') ? { kind, id } : null;
+}
+const collectionList = () => (App.state.settings && App.state.settings.logbookCollections && App.state.settings.logbookCollections.collections) || [];
+/** The default viewing scope (Active collection or its fallback), as computed by the main process. */
+const effectiveScope = () => (App.state.settings && App.state.settings.effectiveScope) || null;
+
+/**
+ * Optional columns shown between RST and the status icon. `logbook` is different: it is always the rightmost column,
+ * after the status icon, and shows each QSO's actual originating logbook (row._logbookId).
+ */
 function qsoRows(rows, cols = ['country']) {
   const extra = qsoColumns(cols);
-  if (!rows.length) return html`<tr><td colspan="${7 + extra.length}" class="text-muted text-center py-3">No QSOs yet</td></tr>`;
+  const withLogbook = cols.includes('logbook');
+  const names = withLogbook ? logbookNames() : null;
+  const width = 7 + extra.length + (withLogbook ? 1 : 0);
+  if (!rows.length) return html`<tr><td colspan="${width}" class="text-muted text-center py-3">No QSOs yet</td></tr>`;
   return rows.map((r) => html`<tr>
     <td>${fmtDate(r.QSO_DATE)}</td><td>${fmtTime(r.TIME_ON)}</td>
     <td class="fw-bold">${r.CALL}</td><td>${r.BAND}</td><td>${r.MODE}${r.SUBMODE && r.SUBMODE !== r.MODE ? ` (${r.SUBMODE})` : ''}</td>
     <td>${r.RST_SENT || r.RST_RCVD ? `${r.RST_SENT || ''} / ${r.RST_RCVD || ''}` : ''}</td>
     ${raw(extra.map((c) => c.cell(r)).join(''))}
-    <td class="text-end">${raw(stateIcon(r))}</td></tr>`).join('');
+    <td class="text-end">${raw(stateIcon(r))}</td>${raw(withLogbook ? html`<td class="wrap">${logbookLabel(r._logbookId, names)}</td>` : '')}</tr>`).join('');
 }
 
-const qsoHead = (cols = ['country']) => html`<thead><tr><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th>${raw(qsoColumns(cols).map((c) => `<th>${c.head}</th>`).join(''))}<th></th></tr></thead>`;
+const qsoHead = (cols = ['country']) => html`<thead><tr><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th>${raw(qsoColumns(cols).map((c) => `<th>${c.head}</th>`).join(''))}<th></th>${raw(cols.includes('logbook') ? '<th>Logbook</th>' : '')}</tr></thead>`;
 
 function currentStation() {
   const c = App.state.settings.cloudlog;
@@ -221,4 +253,4 @@ function mcStatusLine(mc) {
   return html`<div>MC <span class="${MC_STATE_CLASS[state]}" title="${MC_STATE_HINT[state]}">listening on ${mc.address}:${mc.port}</span></div>${raw(err)}`;
 }
 
-App.util = { mcStatusLine, MC_STATE_CLASS, $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, utcStamp, TimeFields, followRig, stateIcon, qsoRows, qsoHead, currentStation, requireLogbook, DIGITAL };
+App.util = { mcStatusLine, MC_STATE_CLASS, $, $$, html, raw, esc, api, toast, confirmDialog, cleanupStrayModalArtifacts, fmtDate, fmtTime, fmtFreq, hzToMhz, freqToBand, defaultRst, modeFromRig, ssbSubmode, utcNow, utcStamp, TimeFields, followRig, stateIcon, qsoRows, qsoHead, logbookNames, logbookLabel, scopeValue, parseScopeValue, collectionList, effectiveScope, currentStation, requireLogbook, DIGITAL };

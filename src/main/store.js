@@ -71,6 +71,7 @@ const SETTINGS_DEFAULTS = {
   quick: { myType: 'POTA', myRef: '', theirType: 'POTA', role: 'activator' },
   contest: { id: 'CQ-WW-SSB', customId: '', sentExchange: '', serial: 1, startedAt: 0 },
   callbook: CALLBOOK_DEFAULTS,
+  logbookCollections: { collections: [], active: null }, // 0.4.4: named groupings of logbooks + the explicit Active collection (null = follow the Active logbook)
 };
 
 /** Older settings files had one `rig`/`relay` pair; fold them into `rigs[0]` in place. */

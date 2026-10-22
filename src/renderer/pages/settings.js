@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const { $, html, raw, api, toast, confirmDialog } = App.util;
+  const { $, html, raw, api, toast, confirmDialog, scopeValue, parseScopeValue, collectionList, effectiveScope } = App.util;
   let el; let tab = 'cloudlog'; let models = [];
 
   const TABS = [['cloudlog', 'Cloudlog', 'fa-cloud'], ['logbooks', 'Logbooks', 'fa-book'], ['callbook', 'Callbook Lookup', 'fa-address-book'], ['radio', 'Radio (CAT)', 'fa-tower-broadcast'], ['adif', 'Incoming ADIF', 'fa-plug'], ['appearance', 'Appearance', 'fa-palette'], ['about', 'About', 'fa-circle-info']];
@@ -171,18 +171,53 @@
     });
   }
 
-  // ---- Logbooks (choose the current one) ------------------------------------------
+  // ---- Logbooks (Active logbook, Active collection, Logbook Collections) ------------------------
+  /** Active collection picker: "follow the Active logbook" (the default), then Collections and Logbooks as separate groups. */
+  function activeCollectionSelect(c) {
+    const st = App.state.settings.logbookCollections || { collections: [], active: null };
+    const eff = effectiveScope();
+    const explicit = eff && eff.source === 'explicit';
+    const cur = explicit ? scopeValue(eff.kind, eff.id) : '';
+    const o = (v, label) => html`<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
+    return html`<select id="bk-active" class="form-select form-select-sm" style="width:auto;max-width:100%" aria-label="Active collection">
+      ${raw(o('', 'Follow the Active logbook (default)'))}
+      ${raw(st.collections.length ? html`<optgroup label="Collections">${raw(st.collections.map((x) => o(scopeValue('collection', x.id), `${x.name} (${x.members.length})`)).join(''))}</optgroup>` : '')}
+      ${raw(c.stations.length ? html`<optgroup label="Logbooks">${raw(c.stations.map((b) => o(scopeValue('logbook', b.id), `${b.name} (${b.callsign})`)).join(''))}</optgroup>` : '')}
+    </select>`;
+  }
+
+  function collectionsCard(c) {
+    const cols = (App.state.settings.logbookCollections || { collections: [] }).collections;
+    const known = new Set(c.stations.map((b) => String(b.id)));
+    const nameOf = (id) => { const b = c.stations.find((x) => String(x.id) === String(id)); return b ? b.name : null; };
+    return html`<div class="card mb-3"><div class="card-header d-flex align-items-center gap-2 flex-wrap"><span>Logbook Collections</span>
+      <button class="btn btn-sm btn-primary ms-auto" id="col-new" ${c.stations.length ? '' : 'disabled'}><i class="fas fa-plus me-1"></i>New collection</button></div>
+      ${raw(cols.length ? html`<ul class="list-group list-group-flush">${raw(cols.map((x) => {
+        const live = x.members.filter((m) => known.has(String(m)));
+        return html`<li class="list-group-item d-flex align-items-center gap-2 flex-wrap">
+          <div class="me-auto"><span class="fw-bold">${x.name}</span> <span class="badge text-bg-secondary">${live.length} logbook${live.length === 1 ? '' : 's'}</span>
+            <div class="small text-muted">${live.length ? live.map(nameOf).join(', ') : 'Empty - shows no QSOs'}</div></div>
+          <a class="btn btn-sm btn-outline-primary" href="#/logbook?collection=${x.id}">View QSOs</a>
+          <button class="btn btn-sm btn-outline-secondary" data-coledit="${x.id}"><i class="fas fa-pen me-1"></i>Edit</button>
+          <button class="btn btn-sm btn-outline-danger" data-coldel="${x.id}" title="Deletes the collection only - its logbooks and QSOs are not touched"><i class="fas fa-trash"></i></button></li>`;
+      }).join(''))}</ul>` : html`<div class="card-body text-muted small">No collections yet. A collection groups existing logbooks so the Dashboard and the Logbooks page can show them together. It never moves or copies QSOs.</div>`)}</div>`;
+  }
+
   function drawLogbooks() {
     const c = App.state.settings.cloudlog;
     const s = App.state.sync;
     $('#tab-body').innerHTML = html`
     <div class="d-flex align-items-center mb-3 gap-2 flex-wrap">
-      <span class="text-muted small">Logbooks are your Cloudlog station profiles. New QSOs from every page go to the current one.</span>
+      <span class="text-muted small">Logbooks are your Cloudlog station profiles. New QSOs from every page go to the Active logbook.</span>
       <button class="btn btn-sm btn-primary ms-auto" id="bk-refresh" ${s.configured ? '' : 'disabled'}><i class="fas fa-rotate me-1"></i>Refresh list</button>
     </div>
+    <div class="card mb-3"><div class="card-body d-flex align-items-center gap-2 flex-wrap">
+      <label class="form-label mb-0 fw-bold" for="bk-active">Active collection</label>${raw(activeCollectionSelect(c))}
+      <span class="small text-muted">What the Dashboard and the Logbooks page show by default (a collection or one logbook). It does not change the Active logbook, and the Active logbook does not change it. With "Follow the Active logbook" you see the Active logbook.</span></div></div>
+    ${raw(collectionsCard(c))}
     ${raw(c.stations.length ? html`<div class="row g-3">${raw(c.stations.map((b) => html`
       <div class="col-md-6 col-xl-4"><div class="card h-100 ${b.id === String(c.currentStationId) ? 'border-success' : ''}">
-        <div class="card-header d-flex justify-content-between"><span class="fw-bold">${b.name}</span>${raw(b.id === String(c.currentStationId) ? '<span class="badge text-bg-success">Current</span>' : '')}</div>
+        <div class="card-header d-flex justify-content-between"><span class="fw-bold">${b.name}</span>${raw(b.id === String(c.currentStationId) ? '<span class="badge text-bg-success">Active logbook</span>' : '')}</div>
         <div class="card-body"><div class="fs-4 mono">${b.callsign}</div><div class="text-muted">Grid ${b.grid || '—'} · ID ${b.id}${b.active ? '' : ' · inactive'}</div></div>
         <div class="card-footer d-flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-success" data-cur="${b.id}" ${b.id === String(c.currentStationId) ? 'disabled' : ''}>Use for new QSOs</button>
@@ -194,7 +229,18 @@
     $('#bk-refresh')?.addEventListener('click', async () => {
       try { const l = await api('stations:refresh'); toast(`${l.length} logbook${l.length === 1 ? '' : 's'} found`); } catch (e) { toast(e.message, 'danger'); }
     });
-    el.querySelectorAll('[data-cur]').forEach((b) => b.addEventListener('click', async () => { await api('stations:setCurrent', b.dataset.cur); toast('Current logbook changed'); }));
+    $('#bk-active')?.addEventListener('change', async (e) => {
+      try { await api('collections:setActive', parseScopeValue(e.target.value)); toast('Active collection changed'); } catch (err) { toast(err.message, 'danger'); }
+    });
+    $('#col-new')?.addEventListener('click', () => editCollection(null));
+    el.querySelectorAll('[data-coledit]').forEach((b) => b.addEventListener('click', () => editCollection(b.dataset.coledit)));
+    el.querySelectorAll('[data-coldel]').forEach((b) => b.addEventListener('click', async () => {
+      const col = (App.state.settings.logbookCollections.collections || []).find((x) => x.id === b.dataset.coldel);
+      const ok = await confirmDialog({ title: 'Delete this collection?', body: `Deletes the collection "${col ? col.name : ''}" only. Its logbooks and all QSOs stay exactly as they are.`, confirmLabel: 'Delete collection' });
+      if (!ok) return;
+      try { await api('collections:delete', b.dataset.coldel); toast('Collection deleted'); } catch (err) { toast(err.message, 'danger'); }
+    }));
+    el.querySelectorAll('[data-cur]').forEach((b) => b.addEventListener('click', async () => { await api('stations:setCurrent', b.dataset.cur); toast('Active logbook changed'); }));
     el.querySelectorAll('[data-clearcache]').forEach((b) => b.addEventListener('click', async () => {
       const st = c.stations.find((x) => x.id === b.dataset.clearcache);
       const label = st ? `${st.name} (${st.callsign})` : `logbook #${b.dataset.clearcache}`;
@@ -206,6 +252,46 @@
       if (!ok) return;
       try { await api('log:clearCache', b.dataset.clearcache); toast('Local cache cleared for that logbook'); } catch (e) { toast(e.message, 'danger'); }
     }));
+  }
+
+  /** Create (id null) or edit one collection: its name and which logbooks it contains. Metadata only. */
+  function editCollection(id) {
+    const c = App.state.settings.cloudlog;
+    const existing = id ? (App.state.settings.logbookCollections.collections || []).find((x) => x.id === id) : null;
+    if (id && !existing) return;
+    const members = new Set(existing ? existing.members.map(String) : []);
+    document.getElementById('col-modal-host')?.remove();
+    const host = document.createElement('div');
+    host.id = 'col-modal-host';
+    host.innerHTML = html`<div class="modal fade" tabindex="-1" id="col-modal"><div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">${existing ? 'Edit collection' : 'New collection'}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button></div>
+      <div class="modal-body">
+        <label class="form-label small mb-0" for="col-name">Name</label>
+        <input id="col-name" class="form-control mb-3" maxlength="60" value="${existing ? existing.name : ''}">
+        <div class="form-label small mb-1">Logbooks in this collection</div>
+        ${raw(c.stations.map((b) => html`<div class="form-check"><input class="form-check-input" type="checkbox" data-member="${b.id}" id="col-m-${b.id}" ${members.has(String(b.id)) ? 'checked' : ''}><label class="form-check-label" for="col-m-${b.id}">${b.name} (${b.callsign})</label></div>`).join(''))}
+        <div class="form-text mt-2">A logbook can be in several collections. Changing this only changes what is shown together; no QSO is moved or copied. Logbooks you add to Cloudlog later are not added to any collection automatically.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" id="col-save">Save</button></div>
+    </div></div></div>`;
+    document.body.appendChild(host);
+    const modalEl = document.getElementById('col-modal');
+    const modal = new bootstrap.Modal(modalEl);
+    modalEl.addEventListener('hidden.bs.modal', () => host.remove());
+    document.getElementById('col-save').addEventListener('click', async () => {
+      const name = document.getElementById('col-name').value;
+      const chosen = [...modalEl.querySelectorAll('[data-member]')].filter((x) => x.checked).map((x) => x.dataset.member);
+      try {
+        if (!existing) await api('collections:create', name, chosen);
+        else {
+          if (name.trim() !== existing.name) await api('collections:rename', existing.id, name);
+          await api('collections:setMembers', existing.id, chosen);
+        }
+        toast(existing ? 'Collection saved' : 'Collection created');
+        modal.hide();
+      } catch (e) { toast(e.message, 'danger'); }
+    });
+    modal.show();
   }
 
   // ---- Radio ------------------------------------------------------------------------

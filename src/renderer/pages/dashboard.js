@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const { $, html, raw, api, toast, qsoRows, qsoHead, fmtFreq, currentStation, mcStatusLine } = App.util;
-  const COLUMNS = ['country']; // Date, UTC, Call, Band, Mode, RST, Country
+  const COLUMNS = ['country', 'logbook']; // Date, UTC, Call, Band, Mode, RST, Country, (status), Logbook
   let el; let timer;
 
   async function draw() {
@@ -9,22 +9,32 @@
     const { settings, rig, rigs, sync, adif } = App.state;
     const st = currentStation();
     const stats = await api('log:stats').catch(() => ({ total: 0, today: 0, recent: [] }));
+    // Everything below the header follows the effective Active collection (a collection, or one logbook). The queue card
+    // shows only queued QSOs whose own logbook is in that scope; Sync now still uploads everything.
+    const scope = stats.scope || App.util.effectiveScope();
+    const q = stats.queue || null;
+    const qPending = q ? q.pending : sync.pending; const qFailed = q ? q.failed : sync.failed;
+    const qOther = q ? q.otherPending + q.otherFailed : 0;
+    const scopeName = scope && !scope.unconfigured ? scope.name : '';
+    const scopeKindLabel = scope && scope.kind === 'collection' ? 'collection' : 'logbook';
     const setup = !sync.configured;
     el.innerHTML = html`
       ${raw(setup ? html`<div class="alert alert-info d-flex justify-content-between align-items-center">
         <span><i class="fas fa-plug me-2"></i>Connect to your Cloudlog server to upload QSOs and see your logbooks. You can still log offline in the meantime.</span>
         <a class="btn btn-primary btn-sm" href="#/settings?tab=cloudlog">Connect to Cloudlog</a></div>` : '')}
       <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card h-100"><div class="card-header">Current logbook</div><div class="card-body">
+        <div class="col-md-3"><div class="card h-100"><div class="card-header">Active logbook</div><div class="card-body">
           <div class="fs-5 fw-bold">${st ? st.name : 'None selected'}</div>
           <div class="text-muted">${st ? `${st.callsign} · ${st.grid}` : 'Pick one on the Logbooks page'}</div>
+          <div class="small text-muted mt-1" id="dash-scope">Viewing: ${scope && scope.unconfigured ? 'nothing selected' : scopeName ? `${scopeName} (${scopeKindLabel})` : 'Active logbook'}</div>
           <a href="#/settings?tab=logbooks" class="btn btn-sm btn-outline-primary mt-2">Change logbook</a></div></div></div>
         <div class="col-md-3"><div class="card h-100"><div class="card-header">QSOs</div><div class="card-body">
           <div class="stat-num">${stats.today}</div><div class="text-muted">today (UTC)</div>
-          <div class="mt-2 text-muted small">${stats.total} in the loaded logbook</div></div></div></div>
+          <div class="mt-2 text-muted small">${stats.total} in ${scopeName ? scopeName : 'the loaded logbook'}</div></div></div></div>
         <div class="col-md-3"><div class="card h-100"><div class="card-header">Upload queue</div><div class="card-body">
-          <div class="stat-num">${sync.pending + sync.failed}</div>
-          <div class="text-muted">${sync.failed ? `${sync.failed} failed, ` : ''}${sync.pending} waiting</div>
+          <div class="stat-num">${qPending + qFailed}</div>
+          <div class="text-muted">${qFailed ? `${qFailed} failed, ` : ''}${qPending} waiting</div>
+          ${raw(qOther ? html`<div class="small text-muted">+${qOther} in other logbooks</div>` : '')}
           <div class="d-flex gap-2 mt-2"><a href="#/logbook" class="btn btn-sm btn-outline-primary">Review</a>
           <button class="btn btn-sm btn-primary" id="dash-sync" ${sync.configured ? '' : 'disabled'}><i class="fas fa-cloud-arrow-up me-1"></i>Sync now</button></div></div></div></div>
         <div class="col-md-3"><div class="card h-100"><div class="card-header">Radio${raw(rigs.length > 1 ? html` <span class="badge text-bg-secondary">${rigs.length}</span>` : '')}</div><div class="card-body">

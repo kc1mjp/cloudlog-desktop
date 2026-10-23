@@ -1,6 +1,3 @@
-Note 2026-10-13T22.23.55
-========================
-
 # Cloudlog Desktop
 
 An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/Cloudlog) (Wavelog servers work too), built with Electron for Debian-based Linux.

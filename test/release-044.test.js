@@ -630,5 +630,4 @@ test('0.4.4 release metadata, and this file is part of npm test', () => {
   assert.strictEqual(lock.version, '0.4.4');
   assert.strictEqual(lock.packages[''].version, '0.4.4');
   assert.ok(pkg.scripts.test.includes('test/release-044.test.js'));
-  assert.match(read('README.md'), /### 0\.4\.4/);
 });

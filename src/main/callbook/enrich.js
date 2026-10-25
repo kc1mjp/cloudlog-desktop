@@ -118,9 +118,9 @@ class CallbookEnricher {
       const plan = this.plan(fields, 'new');
       if (!plan) return fields;
       let timer;
-      const budget = new Promise((resolve) => { timer = setTimeout(() => resolve(null), this.newQsoBudgetMs); if (timer.unref) timer.unref(); });
-      const result = await Promise.race([this.fetch(plan), budget]);
-      clearTimeout(timer);
+      const budget = new Promise((resolve) => { timer = setTimeout(() => resolve(null), this.newQsoBudgetMs); });
+      let result;
+      try { result = await Promise.race([this.fetch(plan), budget]); } finally { clearTimeout(timer); }
       return result ? mergeLookup(fields, result, plan.cats).fields : fields;
     } catch {
       return fields;

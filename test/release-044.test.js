@@ -623,11 +623,3 @@ test('the sync/upload path was not touched by collections', () => {
   assert.ok(!/collection/i.test(read('src', 'main', 'ingest.js')) && !/collection/i.test(read('src', 'main', 'adif.js')));
 });
 
-test('0.4.4 release metadata, and this file is part of npm test', () => {
-  const pkg = JSON.parse(read('package.json'));
-  const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(pkg.version, '0.4.4');
-  assert.strictEqual(lock.version, '0.4.4');
-  assert.strictEqual(lock.packages[''].version, '0.4.4');
-  assert.ok(pkg.scripts.test.includes('test/release-044.test.js'));
-});

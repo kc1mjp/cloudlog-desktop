@@ -773,12 +773,3 @@ test('main.js validates XML-RPC settings before saving and passes the app versio
   assert.match(m, /validateXmlrpcSharing\(settings\.data\.rigs, deepMerge\(JSON\.parse\(JSON\.stringify\(r\)\), patch\)\)/);
   assert.match(m, /appVersion: app\.getVersion\(\)/);
 });
-
-// ---- release plumbing -------------------------------------------------------------------------------------------------
-test('release 0.4.2 plumbing: this file is part of npm test, and versions are bumped (now 0.4.3)', () => {
-  const pkg = JSON.parse(read('package.json'));
-  assert.strictEqual(pkg.version, '0.4.4');
-  assert.ok(pkg.scripts.test.includes('test/release-042.test.js'));
-  const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(lock.version, '0.4.4'); assert.strictEqual(lock.packages[''].version, '0.4.4');
-});

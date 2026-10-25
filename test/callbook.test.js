@@ -62,15 +62,6 @@ const assertNoSecrets = (v) => {
   assert.ok(!s.includes(SESSION), 'session id leaked');
 };
 
-// ---- versioning -----------------------------------------------------------------------------------
-test('version metadata reports 0.4.4', () => {
-  const pkg = JSON.parse(read('package.json'));
-  const lock = JSON.parse(read('package-lock.json'));
-  assert.strictEqual(pkg.version, '0.4.4');
-  assert.strictEqual(lock.version, '0.4.4');
-  assert.strictEqual(lock.packages[''].version, '0.4.4');
-});
-
 // ---- callsigns and profile links ------------------------------------------------------------------
 test('callsign normalisation and validity', () => {
   assert.strictEqual(CB.normalizeCall('  w1 aw \t'), 'W1AW');

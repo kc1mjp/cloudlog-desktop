@@ -18,11 +18,8 @@ An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/C
 
 ## Install
 
-    # Debian
+    # Debian / Ubuntu
     sudo apt install libhamlib-utils
-
-    # Ubuntu
-    sudo apt-get install hamlib
 
     # Common
     chmod +x cloudlog-desktop_0.1.0_x86_64.AppImage && ./cloudlog-desktop_0.1.0_x86_64.AppImage

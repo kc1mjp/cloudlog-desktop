@@ -1,0 +1,180 @@
+# Release / beta publishing workflow.
+#
+# Gate: runs only after the "Node.js CI" workflow (.github/workflows/node.js.yml; its `name:` field, not its
+# filename) COMPLETED SUCCESSFULLY for a PUSH to master in this repository (merged pull requests are pushes).
+# Everything is checked out, built, tagged and published at the exact commit that passed (head_sha),
+# never at the current tip of master.
+#
+# Node version and package types/runners live in .github/release-config.json. See docs/RELEASING.md.
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Node.js CI"]   # must equal the `name:` of .github/workflows/node.js.yml
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_publish: ${{ steps.plan.outputs.should_publish }}
+      reason: ${{ steps.plan.outputs.reason }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      sha: ${{ steps.plan.outputs.sha }}
+      node_version: ${{ steps.plan.outputs.node_version }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0   # full history + all tags for the version comparison
+          fetch-tags: true
+          persist-credentials: false
+      - name: Decide whether to release
+        id: plan
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          node .github/scripts/release/plan.js
+          echo "Checked out: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      - name: Summary
+        env:
+          REASON: ${{ steps.plan.outputs.reason }}
+          PUBLISH: ${{ steps.plan.outputs.should_publish }}
+        run: |
+          echo "### Release plan" >> "$GITHUB_STEP_SUMMARY"
+          echo "publish: \`$PUBLISH\` - $REASON" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build ${{ matrix.type }}
+    needs: plan
+    if: needs.plan.outputs.should_publish == 'true'
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ needs.plan.outputs.node_version }}
+          cache: npm
+      - run: npm install
+      - name: Build package
+        env:
+          PACKAGE_TYPE: ${{ matrix.type }}
+        # --publish never: electron-builder must not publish anything itself.
+        run: npm run "dist:$PACKAGE_TYPE" -- --publish never
+      - name: Stage packages
+        env:
+          PACKAGE_TYPE: ${{ matrix.type }}
+          UPLOAD_DIR: release-upload
+        run: node .github/scripts/release/stage.js
+      - name: Built commit is the checked commit
+        env:
+          RELEASE_SHA: ${{ needs.plan.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      # Actions artifacts are only used to hand the staged packages to the publish job.
+      - uses: actions/upload-artifact@v7   # keep paired with download-artifact in the publish job
+        with:
+          name: packages-${{ matrix.type }}
+          path: release-upload/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Tag and publish
+    needs: [plan, build]
+    if: needs.plan.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only job that can create tags and releases
+    concurrency:
+      group: release-${{ needs.plan.outputs.tag }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8   # keep paired with upload-artifact in the build job
+        with:
+          pattern: packages-*
+          path: release-upload/
+          merge-multiple: true
+      - name: Verify packages and write release notes
+        id: notes
+        run: node .github/scripts/release/prepare-release.js
+      - name: Recheck eligibility against current remote tags
+        id: recheck
+        run: |
+          gh api --paginate "repos/$REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' \
+            | node .github/scripts/release/recheck.js
+      - name: Create tag on the checked commit
+        id: tag
+        if: steps.recheck.outputs.publish == 'true'
+        run: |
+          set -u
+          if gh api "repos/$REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" > /dev/null; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Creation failed. If the tag now exists, a concurrent publisher won: clean skip.
+          # Otherwise (permissions, network, ...) fail loudly.
+          exists=$(gh api --paginate "repos/$REPOSITORY/git/matching-refs/tags/$TAG" --jq '[.[] | select(.ref == "refs/tags/" + env.TAG)] | length')
+          if [ "$exists" != "0" ]; then
+            echo "::notice::Tag $TAG was created concurrently; skipping."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Could not create tag $TAG"
+          exit 1
+      - name: Create release and upload packages
+        if: steps.tag.outputs.created == 'true'
+        env:
+          TITLE: ${{ steps.notes.outputs.title }}
+        run: |
+          set -eu
+          if [ "$PRERELEASE" = "true" ]; then kind="--prerelease --latest=false"; else kind="--latest"; fi
+          # Draft first, so nobody sees a release before all assets are attached. The tag already exists.
+          # shellcheck disable=SC2086
+          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --draft --title "$TITLE" --notes-file release-notes.md $kind
+          # Label = the real file name: GitHub rewrites ~ to . in asset NAMES, the label keeps it.
+          args=()
+          for f in release-upload/*; do args+=("$f#$(basename "$f")"); done
+          gh release upload "$TAG" --repo "$REPOSITORY" "${args[@]}"
+          gh release view "$TAG" --repo "$REPOSITORY" --json assets > release-assets.json
+          expected=$(ls release-upload | wc -l)
+          actual=$(jq '.assets | length' release-assets.json)
+          test "$expected" = "$actual"
+          # Rebuild the notes with the asset names GitHub actually stored.
+          GITHUB_OUTPUT= ASSETS_JSON=release-assets.json node .github/scripts/release/prepare-release.js
+          # shellcheck disable=SC2086
+          gh release edit "$TAG" --repo "$REPOSITORY" --notes-file release-notes.md --draft=false $kind

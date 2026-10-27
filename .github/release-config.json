@@ -1,0 +1,8 @@
+{
+  "_comment": "Single place to configure the release workflow (.github/workflows/release.yml). nodeVersion is the Node.js used for release builds. packageTypes: 'type' is passed to `npm run dist:<type>`; 'runner' is the GitHub-hosted runner that builds it (an rpm/exe/dmg may need another OS, so every type has its own runner); 'extensions' are the output file extensions to publish; 'verify': 'deb' makes staging check the .deb Version field against the derived version. Types must also have a dist:<type> script in package.json.",
+  "nodeVersion": "26.x",
+  "packageTypes": [
+    { "type": "appimage", "runner": "ubuntu-latest", "extensions": [".AppImage"] },
+    { "type": "deb", "runner": "ubuntu-latest", "extensions": [".deb"], "verify": "deb" }
+  ]
+}

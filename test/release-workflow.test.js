@@ -315,13 +315,13 @@ test('prepare: requires every package type; notes include version, commit, downl
   assert.throws(() => prepare(args), /Missing package for type appimage/);
   fs.writeFileSync(path.join(up, 'app_2610.1.0-beta.2_x86_64.AppImage'), 'a');
   const r = prepare(args);
-  assert.equal(r.title, 'Cloudlog Desktop 2610.1.0-beta.2');
+  assert.equal(r.title, '2610.1.0-beta.2');
   assert.match(r.notes, /beta pre-release/);
   assert.ok(r.notes.includes('`2610.1.0~beta.2-1`'));
   assert.ok(r.notes.includes(`/commit/${sha}`));
   assert.ok(r.notes.includes('https://github.com/o/r/releases/download/v2610.1.0-beta.2/app_2610.1.0-beta.2_amd64.deb'));
   assert.ok(r.notes.includes('https://github.com/o/r/archive/refs/tags/v2610.1.0-beta.2.tar.gz'));
-  assert.equal(prepare({ ...args, version: '2610.1.0', tag: 'v2610.1.0' }).title, 'Cloudlog Desktop 2610.1.0');
+  assert.equal(prepare({ ...args, version: '2610.1.0', tag: 'v2610.1.0' }).title, '2610.1.0');
   assert.throws(() => prepare({ ...args, tag: 'v2610.1.1' }), /does not match/);
   fs.writeFileSync(path.join(up, 'evil;name.deb'), 'x');
   assert.throws(() => prepare(args), /Unsafe file name/);

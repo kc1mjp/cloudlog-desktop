@@ -39,10 +39,10 @@ function prepare({ version, tag, sha, repository, uploadDir, assets, config = lo
   }
 
   const base = `https://github.com/${repository}`;
-  const title = `Cloudlog Desktop ${v.text}`;
+  const title = v.text; // release page title is just the version
   const d = derive(v.text);
   const notes = [
-    `# ${title}`,
+    `# Cloudlog Desktop ${v.text}`,
     '',
     v.stage
       ? `**This is a ${v.stage} pre-release.** It is not the latest stable release.`

@@ -1,6 +1,6 @@
 # Release / beta publishing workflow.
 #
-# Gate: runs only after the "Node.js CI" workflow (.github/workflows/node.js.yml; its `name:` field, not its
+# Gate: runs only after the "Test" workflow (.github/workflows/test.yml; its `name:` field, not its
 # filename) COMPLETED SUCCESSFULLY for a PUSH to master in this repository (merged pull requests are pushes).
 # Everything is checked out, built, tagged and published at the exact commit that passed (head_sha),
 # never at the current tip of master.
@@ -10,7 +10,7 @@ name: Release
 
 on:
   workflow_run:
-    workflows: ["Node.js CI"]   # must equal the `name:` of .github/workflows/node.js.yml
+    workflows: ["Test"]   # must equal the `name:` of .github/workflows/test.yml
     types: [completed]
     branches: [master]
 

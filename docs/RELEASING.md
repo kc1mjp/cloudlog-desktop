@@ -6,8 +6,8 @@ in a normal commit/PR, merge to `master`, and the workflow does the rest.**
 
 ## Trigger and gate
 
-1. A push to `master` (including a merged pull request) runs the checks workflow (`Node.js CI`,
-   `.github/workflows/node.js.yml`; matched by its `name:` field).
+1. A push to `master` (including a merged pull request) runs the checks workflow (`Test`,
+   `.github/workflows/test.yml`; matched by its `name:` field).
 2. `release.yml` starts via `workflow_run` only if that run **succeeded**, was a **push** (never a
    pull-request run), on **master**, in **this repository** (never a fork).
 3. The *plan* job checks out the exact commit that passed (`head_sha`, not the tip of master), reads
@@ -75,9 +75,37 @@ Actions artifacts are only used internally to pass files from build jobs to the 
   workflow will skip, because the tag already exists.
 * The workflow never commits, pushes branches, runs `npm version`, or publishes to npm.
 
+## Immutable releases
+
+All releases follow the repository's own *release immutability* setting (Settings -> General -> Releases); the
+workflows never change it. The draft-first flow (tag, draft, upload, publish last) is the order GitHub requires
+when the setting is on. When it is on, a published release's assets and tag can no longer be changed, but the
+release can still be deleted, and the tag name then stays reserved by GitHub (fine with CalVer, where versions
+are never reused).
+
+## Pruning prereleases
+
+`.github/workflows/prerelease.prune.yml` runs every Monday at 03:00 EST (cron `0 8 * * 1`, UTC; one hour later
+by the clock during daylight saving time) and can be started by hand with an optional **dry run**. It never runs
+on release events and only considers published releases that are marked *prerelease* and whose tag is
+`v<version>-alpha|beta|rc.N`; stable releases, drafts and other tags are never touched.
+Each channel is handled separately, the **latest release of the channel is always kept**, plus (not counting the latest):
+
+| Channel | Kept in addition to the latest |
+|---|---|
+| `rc` | 1 |
+| `beta` | 3 |
+| `alpha` | 2 |
+
+Everything older is deleted together with its tag (`gh release delete --cleanup-tag`; this also works for
+immutable releases, whose tag name just stays reserved afterwards). The selection logic is
+`.github/scripts/release/prune.js`. No special token is needed.
+
 ## Repository settings required
 
 * Settings -> Actions -> General -> Workflow permissions: the default token may stay read-only; the publish job
   requests `contents: write` itself. Actions must be allowed to run workflows (no extra secrets needed).
+* Status checks: the `Test` workflow's job is now called `test` (it was `build`), so required checks named
+  `build (22.x)` etc. must be renamed to `test (22.x)`, `test (24.x)`, `test (26.x)`.
 * If tag protection rules / rulesets restrict creating `v*` tags, allow `github-actions[bot]` to create them.
 * `workflow_run` workflows execute from the default branch, so `release.yml` must be on `master`.

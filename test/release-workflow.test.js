@@ -329,7 +329,7 @@ test('prepare: requires every package type; notes include version, commit, downl
 
 // ---- workflow wiring (text assertions; no YAML parser dependency) -------------------------------
 test('release workflow is gated on the checks workflow by its name: field', () => {
-  const checks = read('.github/workflows/node.js.yml');
+  const checks = read('.github/workflows/test.yml');
   const name = /^name:\s*(.+)$/m.exec(checks)[1].trim();
   const rel = read('.github/workflows/release.yml');
   assert.ok(rel.includes(`workflows: ["${name}"]`), `release.yml must reference "${name}"`);

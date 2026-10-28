@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- CI: `node.js.yml` is renamed `test.yml` (workflow `Test`, job `test`); `release.yml` is now gated on `Test`. Releases follow the repository's immutable-releases setting.
+- CI: new `prerelease.prune.yml`, weekly on Monday at 03:00 EST (08:00 UTC), deletes old prereleases and their tags: per channel the latest release is always kept, plus 1 more `rc`, 3 more `beta` and 2 more `alpha`. Stable releases are never touched, and no special token is needed. It can also be started by hand with a dry-run option.
+- Note for maintainers: required status checks named `build (22.x)` etc. are now `test (22.x)`, `test (24.x)`, `test (26.x)`.
+
 ## 0.4.4
 - New: **Logbook Collections** (see above): named groups of existing logbooks, managed in Settings > Logbooks, with a separate **Active collection** setting that sets the default scope of the Dashboard and the Logbooks page. The Active logbook keeps its meaning (where new QSOs go).
 - Dashboard: statistics, Recent QSOs and the queue card follow the Active collection; Recent QSOs has a new rightmost "Logbook" column.

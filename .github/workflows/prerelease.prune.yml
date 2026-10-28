@@ -1,0 +1,79 @@
+# Prune old prereleases (and their tags) once a week.
+#
+# Runs on a schedule (and by hand), never on release events, and only ever deletes releases that are published
+# as a prerelease AND whose tag is a prerelease version (v<YYMM.RELEASE.PATCH>-alpha|beta|rc.N). Stable releases,
+# drafts and unrelated tags are never touched; the selection rules live in .github/scripts/release/prune.js.
+#
+# Immutable releases can still be deleted (the tag name just stays reserved by GitHub); the release is deleted
+# first and its tag right after.
+#
+# Per channel the latest release is always kept, plus (not counting that latest one): rc 1, beta 3, alpha 2.
+#
+# Schedule: GitHub cron is UTC only. Monday-Friday 03:00 EST (UTC-5) = 08:00 UTC. During daylight saving time
+# (EDT, UTC-4) the same cron fires at 04:00 local time.
+name: Prune prereleases
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List what would be deleted without deleting anything'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Prune prereleases
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # delete releases and their tags
+    concurrency:
+      group: prerelease-prune   # never two prune runs at once
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Select prereleases to delete
+        run: |
+          set -eu
+          gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
+            --jq '.[] | {tag_name, prerelease, draft}' \
+            | node .github/scripts/release/prune.js > prune-list.txt
+          echo "### Prerelease pruning" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s prune-list.txt ]; then
+            echo "Selected for deletion (dry run: $DRY_RUN):" >> "$GITHUB_STEP_SUMMARY"
+            sed 's/^/- `/; s/$/`/' prune-list.txt >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Nothing to delete." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Delete releases and their tags
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -u
+          failed=0
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            # Belt and braces: the list only ever holds prerelease tags (see prune.js).
+            if ! [[ "$tag" =~ ^v[0-9]{4}\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+              echo "::error::Refusing to delete $tag: not a prerelease tag"; failed=1; continue
+            fi
+            echo "Deleting release and tag $tag"
+            if ! gh release delete "$tag" --repo "$REPOSITORY" --yes --cleanup-tag; then
+              echo "::error::Could not delete release $tag (GitHub refused the deletion)"; failed=1; continue
+            fi
+            # --cleanup-tag removes the tag; make sure it is really gone.
+            if gh api "repos/$REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+              gh api -X DELETE "repos/$REPOSITORY/git/refs/tags/$tag" || { echo "::error::Could not delete tag $tag"; failed=1; }
+            fi
+          done < prune-list.txt
+          exit "$failed"

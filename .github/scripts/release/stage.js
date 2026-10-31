@@ -7,14 +7,20 @@
  *   UPLOAD_DIR    destination (default: release-upload)
  *
  * A .deb is renamed to its Debian-canonical name (version with ~ and revision, e.g.
- * name_2610.1.0~beta.2-1_amd64.deb). The output directory comes from package.json build.directories.output (not assumed). Fails if no
+ * name_2610.1.0~beta.2-1_amd64.deb). Every staged package also gets a `<package name>.sha256` checksum file (SHA-256,
+ * `sha256sum` format) that is uploaded with it. The output directory comes from package.json build.directories.output (not assumed). Fails if no
  * package was produced or a file name does not carry the version (names must be unambiguous).
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { loadConfig } = require('./config');
 const { derive } = require('./platform-versions');
+
+const CHECKSUM_SUFFIX = '.sha256';
+
+function sha256Hex(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 
 function stage({ root, type, uploadDir, config = loadConfig() }) {
   const entry = config.packageTypes.find((p) => p.type === type);
@@ -43,6 +49,13 @@ function stage({ root, type, uploadDir, config = loadConfig() }) {
     if (fs.existsSync(dest)) throw new Error(`Refusing to overwrite already staged file ${dest}`);
     fs.copyFileSync(path.join(outDir, name), dest);
     staged.push(outName);
+    // Checksum published next to the package, in `sha256sum` format ("<hex>  <file name>"), named exactly like the package.
+    // The in-app updater verifies an AppImage against it. It detects corruption and a mismatched asset; it is NOT
+    // independent publisher authentication (see docs/UPDATES.md).
+    const sum = path.join(uploadDir, `${outName}${CHECKSUM_SUFFIX}`);
+    if (fs.existsSync(sum)) throw new Error(`Refusing to overwrite already staged file ${sum}`);
+    fs.writeFileSync(sum, `${sha256Hex(dest)}  ${outName}\n`);
+    staged.push(`${outName}${CHECKSUM_SUFFIX}`);
   }
   return staged;
 }
@@ -57,4 +70,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { stage };
+module.exports = { stage, sha256Hex, CHECKSUM_SUFFIX };

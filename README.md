@@ -5,7 +5,7 @@ An unofficial native desktop client for [Cloudlog](https://github.com/magicbug/C
 ## What it does
 
 | Area | Details |
-|---|---|
+| --- | --- |
 | Online + offline logging | Every QSO is saved locally first, then uploaded through `api/qso`. If the server is unreachable QSOs queue up and go out automatically when it returns. A "Work offline" switch holds uploads. Failed QSOs show the server's reason and can be retried or discarded. The queue can be saved as ADIF. |
 | Contest logging | Session-based. Built-in: CQ WW (SSB/CW), CQ WPX (SSB/CW), ARRL Field Day, NAQP (CW/SSB), plus "Other" (RST + serial, any ADIF contest ID). Auto serial numbers, live dupe check, score/rate summary. Sent as `CONTEST_ID`, `STX`, `SRX`, `STX_STRING`, `SRX_STRING`. |
 | Quick logging | One-screen SOTA / POTA / WWFF / IOTA logger for activating or hunting. Enter to log. Fills `MY_*_REF`, `SOTA_REF`, `POTA_REF`, `SIG`, `SIG_INFO`. |
@@ -58,4 +58,3 @@ Terminology: a **Logbook** is one of your Cloudlog station profiles (Cloudlog ca
 - **Upload queue** (top of the Logbooks page): unchanged, still lists every queued QSO whatever the Active collection is, with a new rightmost **Logbook** column showing the logbook each queued QSO belongs to (a QSO queued before any logbook was chosen shows "Unassigned"; it is not assigned to the current logbook until the existing upload logic does so).
 - **New logbooks** appear as individual options at once and are not added to any collection. A logbook that disappears from the server list is ignored in collections (the saved membership is left alone until you edit that collection).
 - **Storage is unchanged.** Collections and the Active collection are stored only in `settings.json` (`logbookCollections`: collections with member logbook ids, and the explicit selection as a kind plus an id, so a logbook id and a collection id can never be confused). The QSO database, queued QSOs, upload/sync, ADIF import/export and duplicate checks are not changed, and creating, renaming, editing or deleting collections never rewrites a QSO.
-

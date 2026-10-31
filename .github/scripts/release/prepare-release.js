@@ -15,6 +15,7 @@ const path = require('path');
 const { parseVersion } = require('./version');
 const { loadConfig } = require('./config');
 const { derive } = require('./platform-versions');
+const { CHECKSUM_SUFFIX, sha256Hex } = require('./stage');
 
 /** GitHub rewrites characters outside [A-Za-z0-9._-] (notably ~) to '.' in release asset names. */
 const githubAssetName = (file) => file.replace(/[^A-Za-z0-9._-]/g, '.');
@@ -25,7 +26,18 @@ function prepare({ version, tag, sha, repository, uploadDir, assets, config = lo
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('SHA must be 40 hex characters');
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid repository name');
 
-  const files = fs.readdirSync(uploadDir, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name).sort();
+  const all = fs.readdirSync(uploadDir, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name).sort();
+  const sums = all.filter((f) => f.endsWith(CHECKSUM_SUFFIX));
+  const files = all.filter((f) => !f.endsWith(CHECKSUM_SUFFIX));
+  // Every package must have exactly one checksum file that names it and matches its content; no stray checksum files.
+  for (const f of files) {
+    const sumName = `${f}${CHECKSUM_SUFFIX}`;
+    if (!sums.includes(sumName)) throw new Error(`Missing checksum file ${sumName}`);
+    if (!/^[A-Za-z0-9._~-]+$/.test(f)) throw new Error(`Unsafe file name: ${f}`);
+    const expected = `${sha256Hex(path.join(uploadDir, f))}  ${f}\n`;
+    if (fs.readFileSync(path.join(uploadDir, sumName), 'utf8') !== expected) throw new Error(`Checksum file ${sumName} does not match ${f}`);
+  }
+  for (const sname of sums) if (!files.includes(sname.slice(0, -CHECKSUM_SUFFIX.length))) throw new Error(`Checksum file without a package: ${sname}`);
   const byType = new Map();
   for (const f of files) {
     const t = config.packageTypes.find((p) => p.extensions.some((x) => f.endsWith(x)));
@@ -63,6 +75,16 @@ function prepare({ version, tag, sha, repository, uploadDir, assets, config = lo
       return `- [\`${f}\`](${base}/releases/download/${tag}/${a ? a.name : githubAssetName(f)})`;
     }),
     `- [Source code (tar.gz)](${base}/archive/refs/tags/${tag}.tar.gz)`,
+    '',
+    '## Checksums',
+    '',
+    'Each package has a SHA-256 checksum file (`<package name>.sha256`, `sha256sum` format). The in-app updater verifies an AppImage against it before installing. It detects corrupted or mismatched downloads; it is not independent proof of who published the file.',
+    '',
+    ...sums.map((f) => {
+      const a = assets && assets.find((x) => x.label === f || x.name === f);
+      if (assets && !a) throw new Error(`Uploaded assets do not include ${f}`);
+      return `- [\`${f}\`](${base}/releases/download/${tag}/${a ? a.name : githubAssetName(f)})`;
+    }),
     ''
   ].join('\n');
   return { title, notes, files };

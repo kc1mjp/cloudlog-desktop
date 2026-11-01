@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, safeStorage, Notification } = require('electron');
 
 const { JsonStore, deepMerge, SETTINGS_DEFAULTS, newRig, migrateRigs, migrateCallbook } = require('./store');
 const { CloudlogClient, CloudlogError } = require('./cloudlog');
@@ -21,7 +21,9 @@ const callbookConfig = require('./callbook/config');
 const { CallbookEnricher } = require('./callbook/enrich');
 const { createSecretBox } = require('./secrets');
 const { profileUrl } = require('../renderer/callbook-shared');
-const { createExternalLinks } = require('./external-links');
+const { createExternalLinks, normalizeHttpUrl } = require('./external-links');
+const { UpdateService } = require('./updater/service');
+const { detectInstallation } = require('./updater/install-type');
 
 // A fixed, predictable data directory regardless of how Electron would
 // otherwise derive one from the app/product name.
@@ -36,7 +38,7 @@ if (!app.requestSingleInstanceLock()) {
 const ICON_PATH = path.join(__dirname, '..', 'assets', 'icon.png');
 
 let win = null; let tray = null;
-let settings; let client; let log; let rigs; let adif;
+let settings; let client; let log; let rigs; let adif; let updater;
 let quitting = false;
 
 const send = (type, data) => {
@@ -171,7 +173,8 @@ const api = {
     const before = JSON.parse(JSON.stringify(settings.data));
     // Callbook credentials only change through callbook:save, so a generic patch can never touch them.
     // Collections and the Active collection only change through the collections:* calls, which validate them.
-    const { callbook: _callbook, logbookCollections: _lc, effectiveScope: _es, ...safePatch } = patch || {};
+    // Update preferences only change through the updates:* calls, which enforce the beta/alpha dependency.
+    const { callbook: _callbook, logbookCollections: _lc, effectiveScope: _es, updates: _up, ...safePatch } = patch || {};
     deepMerge(settings.data, safePatch);
     settings.saveNow();
     const now = settings.data;
@@ -208,6 +211,23 @@ const api = {
   // or a fixed About link can ever reach the browser.
   'external:cloudlog': () => externalLinks.openCloudlog(),
   'external:about': (key) => externalLinks.openAbout(key),
+
+  // ---- Updates (GitHub Releases). All network access lives in the main process; the renderer only sees state. ----
+  'updates:state': () => updater.getState(),
+  'updates:check': async () => { const result = await updater.check('manual'); return { result, state: updater.getState() }; },
+  'updates:set': (patch) => updater.setPreferences(patch),
+  'updates:skip': () => updater.skip(),
+  'updates:install': () => updater.install({ auto: false }),
+  'updates:cancel': () => updater.cancel(),
+  'updates:restart': () => updater.restart(),
+  'updates:online': (online) => { updater.setOnline(!!online); return true; },
+  // The release page may always be opened (even with updates turned off). The URL is built in the updater from a validated tag.
+  'updates:openRelease': async () => {
+    const r = updater.getState().release;
+    const url = r && normalizeHttpUrl(r.url);
+    if (!url || !url.startsWith(`${updater.getState().repoUrl}/releases/tag/`)) return { ok: false, message: 'There is no release page to open.' };
+    try { await shell.openExternal(url); return { ok: true }; } catch { return { ok: false, message: 'Could not open the link in your browser.' }; }
+  },
 
   'cloudlog:test': async () => {
     if (!client.configured()) return { ok: false, message: 'Enter the Cloudlog address and API key first' };
@@ -401,6 +421,29 @@ app.whenReady().then(async () => {
   rigs = new RigManager({ getSettings: () => settings.data, resourcesPath: process.resourcesPath, appVersion: app.getVersion() });
   adif = new AdifServer({ getSettings: () => settings.data });
 
+  updater = new UpdateService({
+    store: settings,
+    appVersion: app.getVersion(),
+    installation: detectInstallation({ isPackaged: app.isPackaged }),
+    emit: (state) => send('updates', state),
+    notify: (d) => {
+      send('updates:available', { version: d.version, channelLabel: d.channelLabel });
+      try {
+        if (Notification.isSupported() && (!win || !win.isVisible())) {
+          const n = new Notification({ title: 'Cloudlog Desktop update available', body: `Version ${d.version} (${d.channelLabel}) is available.` });
+          n.on('click', () => { showWindow(); send('updates:show', {}); });
+          n.show();
+        }
+      } catch { /* notifications are optional */ }
+    },
+    // Restart goes through the normal quit path below (rigs and listeners stop, settings are saved), then relaunches.
+    relaunch: () => {
+      const img = process.env.APPIMAGE;
+      if (img && updater.installation.type === 'appimage') app.relaunch({ execPath: img }); else app.relaunch();
+      quitting = true; app.quit();
+    },
+  });
+
   const refreshTray = createTray();
   log.on('status', () => { send('sync', log.status()); refreshTray(); });
   log.on('changed', () => { send('qso:changed', {}); send('sync', log.status()); refreshTray(); });
@@ -419,6 +462,7 @@ app.whenReady().then(async () => {
   await rigs.listModels().catch(() => {});
   await rigs.reconcile();
   adif.apply();
+  updater.startStartupCheck(); // one delayed, non-blocking check per launch (see updater/scheduler.js)
 });
 
 app.on('window-all-closed', () => { /* keep running in the tray */ });

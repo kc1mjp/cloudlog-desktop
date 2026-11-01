@@ -3,7 +3,7 @@
   const { $, html, raw, api, toast, confirmDialog, scopeValue, parseScopeValue, collectionList, effectiveScope } = App.util;
   let el; let tab = 'cloudlog'; let models = [];
 
-  const TABS = [['cloudlog', 'Cloudlog', 'fa-cloud'], ['logbooks', 'Logbooks', 'fa-book'], ['callbook', 'Callbook Lookup', 'fa-address-book'], ['radio', 'Radio (CAT)', 'fa-tower-broadcast'], ['adif', 'Incoming ADIF', 'fa-plug'], ['appearance', 'Appearance', 'fa-palette'], ['about', 'About', 'fa-circle-info']];
+  const TABS = [['cloudlog', 'Cloudlog', 'fa-cloud'], ['logbooks', 'Logbooks', 'fa-book'], ['callbook', 'Callbook Lookup', 'fa-address-book'], ['radio', 'Radio (CAT)', 'fa-tower-broadcast'], ['adif', 'Incoming ADIF', 'fa-plug'], ['appearance', 'Appearance', 'fa-palette'], ['updates', 'Updates', 'fa-arrows-rotate'], ['about', 'About', 'fa-circle-info']];
   const HAMLIB_MODES = ['USB', 'LSB', 'CW', 'CWR', 'AM', 'FM', 'WFM', 'RTTY', 'RTTYR', 'PKTUSB', 'PKTLSB', 'PKTFM'];
   const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; };
   const check = (v) => (v ? 'checked' : '');
@@ -22,7 +22,7 @@
       <ul class="nav nav-tabs mb-3">${raw(TABS.map(([id, label, icon]) => html`<li class="nav-item"><a class="nav-link ${id === tab ? 'active' : ''}" href="#" data-tab="${id}"><i class="fas ${icon} me-1"></i>${label}</a></li>`).join(''))}</ul>
       <div id="tab-body"></div>`;
     el.querySelectorAll('[data-tab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); tab = a.dataset.tab; draw(); }));
-    ({ cloudlog: drawCloudlog, logbooks: drawLogbooks, callbook: drawCallbook, radio: drawRadio, adif: drawAdif, appearance: drawAppearance, about: drawAbout })[tab]();
+    ({ cloudlog: drawCloudlog, logbooks: drawLogbooks, callbook: drawCallbook, radio: drawRadio, adif: drawAdif, appearance: drawAppearance, updates: drawUpdates, about: drawAbout })[tab]();
   }
 
   async function save(patch, msg = 'Settings saved') {
@@ -577,6 +577,46 @@
     el.querySelectorAll('input[name=theme]').forEach((i) => i.addEventListener('change', async () => { App.applyTheme(i.value); await api('settings:set', { theme: i.value }); }));
   }
 
+  // ---- Updates ----------------------------------------------------------------------------------------------
+  // All update logic runs in the main process; this tab only renders its state (UpdatesShared) and sends user actions.
+  let updState = null;
+  async function drawUpdates() {
+    $('#tab-body').innerHTML = html`<span class="text-muted">Loading…</span>`;
+    try { updState = await api('updates:state'); } catch (e) { $('#tab-body').innerHTML = html`<div class="alert alert-danger">${e.message}</div>`; return; }
+    paintUpdates();
+  }
+
+  function paintUpdates() {
+    const body = $('#tab-body');
+    if (!body || tab !== 'updates' || !updState) return;
+    const hadFocus = document.activeElement && document.activeElement.id;
+    body.innerHTML = UpdatesShared.renderUpdatesBody(updState);
+    if (hadFocus) { const f = document.getElementById(hadFocus); if (f && !f.disabled) f.focus(); }
+    body.querySelectorAll('[data-pref]').forEach((i) => i.addEventListener('change', async () => {
+      try { updState = await api('updates:set', { [i.dataset.pref]: i.checked }); } catch (e) { toast(e.message, 'danger'); try { updState = await api('updates:state'); } catch { /* keep the old view */ } }
+      paintUpdates();
+    }));
+    body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const act = b.dataset.act;
+        if (act === 'open-release') { const r = await api('updates:openRelease'); if (r && !r.ok) toast(r.message, 'danger'); return; }
+        if (act === 'check') {
+          const { result, state } = await api('updates:check'); updState = state; paintUpdates();
+          if (result.ok) toast(state.check.message, state.release && state.release.status === 'available' ? 'success' : 'info');
+          else if (result.kind !== 'aborted') toast(result.message, result.kind === 'disabled' ? 'warning' : 'danger');
+          return;
+        }
+        if (act === 'skip') { updState = await api('updates:skip'); toast(`Version ${updState.release.version} skipped`, 'info'); }
+        if (act === 'update') { const r = await api('updates:install'); if (!r.ok) toast(r.message, 'warning'); }
+        if (act === 'cancel') await api('updates:cancel');
+        if (act === 'restart') await api('updates:restart');
+        updState = await api('updates:state');
+      } catch (err) { toast(err.message, 'danger'); }
+      paintUpdates();
+    }));
+  }
+
   async function drawAbout() {
     $('#tab-body').innerHTML = html`<div class="card" style="max-width:40rem"><div class="card-header">Cloudlog Desktop</div><div class="card-body small" id="about-body"><span class="text-muted">Loading…</span></div></div>`;
     let about;
@@ -593,11 +633,13 @@
   App.pages.settings = {
     mount,
     unmount() { el = null; },
-    onEvent({ type }) {
+    onEvent({ type, data }) {
       if (!el) return;
       if (type === 'rig' && tab === 'radio' && $('#radio-form')) { drawRigStatus(); drawAllRigs(); }
       if (type === 'adif:status' && tab === 'adif') drawAdifStatus();
       if ((type === 'settings' || type === 'sync') && tab === 'logbooks') drawLogbooks();
+      if (type === 'updates' && tab === 'updates') { updState = data; paintUpdates(); }
+      if (type === 'updates:show') { tab = 'updates'; draw(); }
     },
   };
 })();

@@ -71,13 +71,14 @@ const SETTINGS_DEFAULTS = {
   quick: { myType: 'POTA', myRef: '', theirType: 'POTA', role: 'activator' },
   contest: { id: 'CQ-WW-SSB', customId: '', sentExchange: '', serial: 1, startedAt: 0 },
   callbook: CALLBOOK_DEFAULTS,
+  updates: {}, // saved update preferences only; a missing key means "never saved" so install-dependent defaults can apply (src/main/updater/channels.js)
   logbookCollections: { collections: [], active: null }, // 0.4.4: named groupings of logbooks + the explicit Active collection (null = follow the Active logbook)
 };
 
 /** Older settings files had one `rig`/`relay` pair; fold them into `rigs[0]` in place. */
 function migrateRigs(data) {
   if (data.rig && (!Array.isArray(data.rigs) || !data.rigs.length)) {
-    // Preserve old behaviour for anyone upgrading: a configured radio used to just
+    // Preserve old behavior for anyone upgrading: a configured radio used to just
     // always run, so keep it running rather than silently going quiet on next launch.
     const wasConfigured = data.rig.mode && data.rig.mode !== 'none';
     const r = newRig('rig-1', { ...data.rig, label: data.rig.name || 'Radio 1', relay: data.relay || undefined, enabled: wasConfigured, activeOnStartup: wasConfigured });

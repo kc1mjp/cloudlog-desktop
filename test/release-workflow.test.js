@@ -9,7 +9,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const V = require('../.github/scripts/release/version');
 const { plan } = require('../.github/scripts/release/plan');
-const { stage } = require('../.github/scripts/release/stage');
+const { stage, sha256Hex } = require('../.github/scripts/release/stage');
 const { prepare } = require('../.github/scripts/release/prepare-release');
 const { loadConfig } = require('../.github/scripts/release/config');
 
@@ -248,6 +248,12 @@ test('loadConfig rejects unsafe values', () => {
   assert.throws(() => loadConfig(f), /invalid runner/);
 });
 
+// A package plus the checksum file stage.js publishes next to it.
+function writePackage(dir, name, content) {
+  fs.writeFileSync(path.join(dir, name), content);
+  fs.writeFileSync(path.join(dir, `${name}.sha256`), `${sha256Hex(path.join(dir, name))}  ${name}\n`);
+}
+
 const NOVERIFY = { packageTypes: loadConfig().packageTypes.map(({ verify, ...p }) => p) }; // fake package files below
 
 test('stage keeps both package types in a dedicated upload dir and does not need the output dir to survive', () => {
@@ -258,10 +264,14 @@ test('stage keeps both package types in a dedicated upload dir and does not need
   fs.writeFileSync(path.join(root, 'out', 'app_2610.1.0-beta.2_amd64.deb'), 'd');
   fs.writeFileSync(path.join(root, 'out', 'latest-linux.yml'), 'y');
   const up = path.join(root, 'up');
-  assert.deepEqual(stage({ root, type: 'appimage', uploadDir: up, config: NOVERIFY }), ['app_2610.1.0-beta.2_x86_64.AppImage']);
+  assert.deepEqual(stage({ root, type: 'appimage', uploadDir: up, config: NOVERIFY }), ['app_2610.1.0-beta.2_x86_64.AppImage', 'app_2610.1.0-beta.2_x86_64.AppImage.sha256']);
   fs.rmSync(path.join(root, 'out', 'app_2610.1.0-beta.2_x86_64.AppImage')); // a later build cleans the output
-  assert.deepEqual(stage({ root, type: 'deb', uploadDir: up, config: NOVERIFY }), ['app_2610.1.0-beta.2_amd64.deb']);
-  assert.deepEqual(fs.readdirSync(up).sort(), ['app_2610.1.0-beta.2_amd64.deb', 'app_2610.1.0-beta.2_x86_64.AppImage']);
+  assert.deepEqual(stage({ root, type: 'deb', uploadDir: up, config: NOVERIFY }), ['app_2610.1.0-beta.2_amd64.deb', 'app_2610.1.0-beta.2_amd64.deb.sha256']);
+  assert.deepEqual(fs.readdirSync(up).sort(), ['app_2610.1.0-beta.2_amd64.deb', 'app_2610.1.0-beta.2_amd64.deb.sha256', 'app_2610.1.0-beta.2_x86_64.AppImage', 'app_2610.1.0-beta.2_x86_64.AppImage.sha256']);
+  // The checksum file is in sha256sum format and names exactly its package.
+  const sumText = fs.readFileSync(path.join(up, 'app_2610.1.0-beta.2_x86_64.AppImage.sha256'), 'utf8');
+  assert.equal(sumText, `${sha256Hex(path.join(up, 'app_2610.1.0-beta.2_x86_64.AppImage'))}  app_2610.1.0-beta.2_x86_64.AppImage\n`);
+  assert.match(sumText, /^[0-9a-f]{64} {2}app_2610\.1\.0-beta\.2_x86_64\.AppImage\n$/);
   assert.throws(() => stage({ root, type: 'rpm', uploadDir: up, config: NOVERIFY }), /Unknown package type/);
   fs.rmSync(path.join(root, 'out', 'app_2610.1.0-beta.2_amd64.deb'));
   assert.throws(() => stage({ root, type: 'deb', uploadDir: path.join(root, 'u2'), config: NOVERIFY }), /No \.deb package found/);
@@ -280,7 +290,7 @@ test('stage verifies the Debian Version field of a real .deb against the derived
     return root;
   };
   const good = mk('2610.1.0~beta.2-1');
-  assert.deepEqual(stage({ root: good, type: 'deb', uploadDir: path.join(good, 'up') }), ['app_2610.1.0~beta.2-1_all.deb']);
+  assert.deepEqual(stage({ root: good, type: 'deb', uploadDir: path.join(good, 'up') }), ['app_2610.1.0~beta.2-1_all.deb', 'app_2610.1.0~beta.2-1_all.deb.sha256']);
   assert.ok(fs.existsSync(path.join(good, 'up', 'app_2610.1.0~beta.2-1_all.deb')));
   const bad = mk('2610.1.0-beta.2');
   assert.throws(() => stage({ root: bad, type: 'deb', uploadDir: path.join(bad, 'up') }), /expected 2610\.1\.0~beta\.2-1/);
@@ -295,14 +305,16 @@ test('prepare: ~ in deb names is allowed; links use the asset names GitHub store
   const { githubAssetName } = require('../.github/scripts/release/prepare-release');
   assert.equal(githubAssetName('app_2610.1.0~beta.2-1_amd64.deb'), 'app_2610.1.0.beta.2-1_amd64.deb');
   const up = fs.mkdtempSync(path.join(os.tmpdir(), 'tilde-'));
-  fs.writeFileSync(path.join(up, 'app_2610.1.0~beta.2-1_amd64.deb'), 'd');
-  fs.writeFileSync(path.join(up, 'app_2610.1.0-beta.2_x86_64.AppImage'), 'a');
+  writePackage(up, 'app_2610.1.0~beta.2-1_amd64.deb', 'd');
+  writePackage(up, 'app_2610.1.0-beta.2_x86_64.AppImage', 'a');
   const args = { version: '2610.1.0-beta.2', tag: 'v2610.1.0-beta.2', sha: 'b'.repeat(40), repository: 'o/r', uploadDir: up };
   const predicted = prepare(args).notes;
   assert.ok(predicted.includes('[`app_2610.1.0~beta.2-1_amd64.deb`](https://github.com/o/r/releases/download/v2610.1.0-beta.2/app_2610.1.0.beta.2-1_amd64.deb)'));
   const actual = prepare({ ...args, assets: [
     { name: 'app_2610.1.0.beta.2-1_amd64.deb', label: 'app_2610.1.0~beta.2-1_amd64.deb' },
-    { name: 'app_2610.1.0-beta.2_x86_64.AppImage', label: 'app_2610.1.0-beta.2_x86_64.AppImage' }] }).notes;
+    { name: 'app_2610.1.0.beta.2-1_amd64.deb.sha256', label: 'app_2610.1.0~beta.2-1_amd64.deb.sha256' },
+    { name: 'app_2610.1.0-beta.2_x86_64.AppImage', label: 'app_2610.1.0-beta.2_x86_64.AppImage' },
+    { name: 'app_2610.1.0-beta.2_x86_64.AppImage.sha256', label: 'app_2610.1.0-beta.2_x86_64.AppImage.sha256' }] }).notes;
   assert.ok(actual.includes('/download/v2610.1.0-beta.2/app_2610.1.0.beta.2-1_amd64.deb)'));
   assert.throws(() => prepare({ ...args, assets: [{ name: 'other', label: 'other' }] }), /do not include/);
 });
@@ -311,9 +323,9 @@ test('prepare: requires every package type; notes include version, commit, downl
   const up = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-'));
   const sha = 'a'.repeat(40);
   const args = { version: '2610.1.0-beta.2', tag: 'v2610.1.0-beta.2', sha, repository: 'o/r', uploadDir: up };
-  fs.writeFileSync(path.join(up, 'app_2610.1.0-beta.2_amd64.deb'), 'd');
+  writePackage(up, 'app_2610.1.0-beta.2_amd64.deb', 'd');
   assert.throws(() => prepare(args), /Missing package for type appimage/);
-  fs.writeFileSync(path.join(up, 'app_2610.1.0-beta.2_x86_64.AppImage'), 'a');
+  writePackage(up, 'app_2610.1.0-beta.2_x86_64.AppImage', 'a');
   const r = prepare(args);
   assert.equal(r.title, '2610.1.0-beta.2');
   assert.match(r.notes, /beta pre-release/);
@@ -324,7 +336,24 @@ test('prepare: requires every package type; notes include version, commit, downl
   assert.equal(prepare({ ...args, version: '2610.1.0', tag: 'v2610.1.0' }).title, '2610.1.0');
   assert.throws(() => prepare({ ...args, tag: 'v2610.1.1' }), /does not match/);
   fs.writeFileSync(path.join(up, 'evil;name.deb'), 'x');
-  assert.throws(() => prepare(args), /Unsafe file name/);
+  assert.throws(() => prepare(args), /Unsafe file name|Missing checksum/);
+});
+
+test('prepare: every package needs a matching sha256 checksum file; stray or wrong ones are refused', () => {
+  const up = fs.mkdtempSync(path.join(os.tmpdir(), 'sums-'));
+  const args = { version: '2610.1.0', tag: 'v2610.1.0', sha: 'c'.repeat(40), repository: 'o/r', uploadDir: up };
+  writePackage(up, 'app_2610.1.0_amd64.deb', 'd');
+  fs.writeFileSync(path.join(up, 'app_2610.1.0_x86_64.AppImage'), 'a');           // no checksum yet
+  assert.throws(() => prepare(args), /Missing checksum file app_2610\.1\.0_x86_64\.AppImage\.sha256/);
+  fs.writeFileSync(path.join(up, 'app_2610.1.0_x86_64.AppImage.sha256'), `${'0'.repeat(64)}  app_2610.1.0_x86_64.AppImage\n`); // wrong digest
+  assert.throws(() => prepare(args), /does not match/);
+  writePackage(up, 'app_2610.1.0_x86_64.AppImage', 'a');
+  const r = prepare(args);
+  assert.match(r.notes, /## Checksums/);
+  assert.match(r.notes, /not independent proof/);
+  assert.ok(r.notes.includes('app_2610.1.0_x86_64.AppImage.sha256'));
+  fs.writeFileSync(path.join(up, 'orphan.deb.sha256'), 'x');
+  assert.throws(() => prepare(args), /without a package/);
 });
 
 // ---- workflow wiring (text assertions; no YAML parser dependency) -------------------------------

@@ -76,6 +76,8 @@
     else if (type === 'sync') App.state.sync = data;
     else if (type === 'settings') { App.state.settings = data; applyTheme(data.theme); }
     else if (type === 'adif:status') App.state.adif = data;
+    else if (type === 'updates:show') { location.hash = '#/settings?tab=updates'; return; }
+    else if (type === 'updates:available') toast(`Update available: Cloudlog Desktop ${data.version} (${data.channelLabel}). See Settings > Updates.`, 'info', 9000);
     else if (type === 'adif:received') {
       if (data.count) toast(`Received ${data.count} QSO${data.count > 1 ? 's' : ''} via ${data.source}: ${data.calls.slice(0, 4).join(', ')}`, 'info');
       data.errors.forEach((e) => toast(`Skipped incoming QSO - ${e}`, 'warning'));
@@ -111,6 +113,8 @@
     $('#open-server').addEventListener('click', openServer);
     $('#btn-settings').addEventListener('click', () => { location.hash = '#/settings'; });
     window.addEventListener('hashchange', route);
+    // A connectivity hint only: it can let a pending startup update check run once the network is back (see main/updater/scheduler.js).
+    window.addEventListener('online', () => { api('updates:online', true).catch(() => {}); });
     setInterval(clock, 500);
     clock();
     route();

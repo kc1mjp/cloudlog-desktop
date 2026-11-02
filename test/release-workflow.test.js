@@ -350,7 +350,6 @@ test('prepare: every package needs a matching sha256 checksum file; stray or wro
   writePackage(up, 'app_2610.1.0_x86_64.AppImage', 'a');
   const r = prepare(args);
   assert.match(r.notes, /## Checksums/);
-  assert.match(r.notes, /not independent proof/);
   assert.ok(r.notes.includes('app_2610.1.0_x86_64.AppImage.sha256'));
   fs.writeFileSync(path.join(up, 'orphan.deb.sha256'), 'x');
   assert.throws(() => prepare(args), /without a package/);

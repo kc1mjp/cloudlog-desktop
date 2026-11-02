@@ -62,7 +62,7 @@ function prepare({ version, tag, sha, repository, uploadDir, assets, config = lo
     '',
     `- Version: \`${v.text}\``,
     `- Tag: \`${tag}\``,
-    `- Debian package version: \`${d.debVersion}\``,
+    `- Debian version: \`${d.debVersion}\``,
     `- Source commit: [\`${sha}\`](${base}/commit/${sha})`,
     '',
     '## Downloads',
@@ -77,8 +77,6 @@ function prepare({ version, tag, sha, repository, uploadDir, assets, config = lo
     `- [Source code (tar.gz)](${base}/archive/refs/tags/${tag}.tar.gz)`,
     '',
     '## Checksums',
-    '',
-    'Each package has a SHA-256 checksum file (`<package name>.sha256`, `sha256sum` format). The in-app updater verifies an AppImage against it before installing. It detects corrupted or mismatched downloads; it is not independent proof of who published the file.',
     '',
     ...sums.map((f) => {
       const a = assets && assets.find((x) => x.label === f || x.name === f);

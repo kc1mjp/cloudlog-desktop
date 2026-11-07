@@ -14,7 +14,7 @@
 const fs = require('fs');
 const { parseTag, compareVersions } = require('./version');
 
-const KEEP = { rc: 1, beta: 3, alpha: 2 };   // releases kept in addition to the latest of the channel
+const KEEP = { rc: 1, beta: 2, alpha: 2 };   // releases kept in addition to the latest of the channel
 
 function selectPrunable(releases) {
   const byStage = new Map(Object.keys(KEEP).map((s) => [s, []]));

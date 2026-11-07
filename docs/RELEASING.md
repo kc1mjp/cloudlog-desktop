@@ -89,7 +89,7 @@ are never reused).
 
 ## Pruning prereleases
 
-`.github/workflows/prerelease.prune.yml` runs every Monday at 03:00 EST (cron `0 8 * * 1`, UTC; one hour later
+`.github/workflows/cron.cleanup.yml` runs every Monday at 03:00 EST (cron `0 8 * * 1`, UTC; one hour later
 by the clock during daylight saving time) and can be started by hand with an optional **dry run**. It never runs
 on release events and only considers published releases that are marked *prerelease* and whose tag is
 `v<version>-alpha|beta|rc.N`; stable releases, drafts and other tags are never touched.
@@ -98,7 +98,7 @@ Each channel is handled separately, the **latest release of the channel is alway
 | Channel | Kept in addition to the latest |
 | --- | --- |
 | `rc` | 1 |
-| `beta` | 3 |
+| `beta` | 2 |
 | `alpha` | 2 |
 
 Everything older is deleted together with its tag (`gh release delete --cleanup-tag`; this also works for
